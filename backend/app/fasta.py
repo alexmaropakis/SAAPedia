@@ -1,13 +1,13 @@
-"""Generate UniProt-style FASTA for the variant (substituted) peptide of each SAAP.
+"""Generate FragPipe/Philosopher-safe mock-UniProt FASTA for each SAAP's variant
+(substituted / mistranslated) peptide.
 
-Each selected SAAP emits one entry whose sequence is its `mtp_seq`. The header
-follows UniProt conventions:
+Header format (matches the lab's build pipeline):
 
-    >db|ACCESSION|ENTRY_NAME description OS=<species> GN=<gene> ...
+    >sp|{accession}-MTP{id}-{token}|{gene}-mut {gene} mistranslated MTP{id} \
+       OS={Species} OX={taxid} GN={gene} PE=1 SV=1
 
-Because the sequence is the substituted peptide (not the full protein), the
-accession/entry-name are derived from the source protein plus the substitution,
-and the internal SAAP id guarantees uniqueness.
+The accession component is made unique per entry by the internal SAAP id (MTP{id}),
+and `token` is the pool/plex label chosen at export time.
 """
 from __future__ import annotations
 
@@ -16,11 +16,22 @@ import re
 from .models import SAAP
 
 DEFAULT_HEADER = (
-    ">saap|{accession}|{entry_name} {protein} SAAP variant ({aa_sub}) "
-    "OS={species} GN={gene} BP={bp_seq}"
+    ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} mistranslated {mid} "
+    "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
 )
 DEFAULT_LINE_WIDTH = 60
-DEFAULT_SPECIES = "Homo sapiens"
+DEFAULT_TOKEN = "pooled"
+
+# species (lowercased, first token if combined) -> (OS name, OX taxonomy id)
+_SPECIES_INFO = {
+    "homo sapiens": ("Homo sapiens", "9606"),
+    "human": ("Homo sapiens", "9606"),
+    "mus musculus": ("Mus musculus", "10090"),
+    "mouse": ("Mus musculus", "10090"),
+    "rattus norvegicus": ("Rattus norvegicus", "10116"),
+    "rat": ("Rattus norvegicus", "10116"),
+    "saccharomyces cerevisiae": ("Saccharomyces cerevisiae", "559292"),
+}
 
 _SUB_SPLIT = re.compile(r"\s*(?:to|->|>|/|→)\s*", re.IGNORECASE)
 
@@ -35,21 +46,58 @@ def compact_sub(aa_sub: str | None) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", aa_sub) or "sub"
 
 
-def _fields(saap: SAAP, species: str) -> dict:
+def sanitize_token(token: str | None) -> str:
+    """Lowercase, keep alphanumerics/underscores (matches the pipeline's plex token)."""
+    tok = re.sub(r"[^A-Za-z0-9]+", "_", (token or "").strip().lower()).strip("_")
+    return tok or DEFAULT_TOKEN
+
+
+def _resolve_species(species_raw: str) -> tuple[str, str]:
+    """Return (OS name, OX taxid). Uses the first species if combined; unknown
+    species keep their name with a blank taxid."""
+    first = (species_raw or "").split("/")[0].strip().lower()
+    if first in _SPECIES_INFO:
+        return _SPECIES_INFO[first]
+    return (first.capitalize() if first else "", "")
+
+
+def _fields(saap: SAAP, species: str, token: str) -> dict:
     accession = saap.source_accession or f"SAAP{saap.id}"
-    sub_c = compact_sub(saap.aa_sub)
+    gene = saap.source_gene or "-"
+    os_name, ox = _resolve_species(species)
+    mid = f"MTP{saap.id}"
     return {
         "id": saap.id,
+        "mid": mid,
         "accession": accession,
-        "entry_name": f"SAAP{saap.id}_{sub_c}",
-        "sub_compact": sub_c,
-        "gene": saap.source_gene or "-",
-        "protein": saap.ref_proteins or "Uncharacterized SAAP",
+        "tok": token,
+        "gene": gene,
+        "species": os_name,
+        "taxid": ox,
+        "entry_name": f"{gene}-mut",
+        "sub_compact": compact_sub(saap.aa_sub),
         "aa_sub": saap.aa_sub or "?",
         "bp_seq": saap.bp_seq or "-",
         "mtp_seq": saap.mtp_seq,
-        "species": species,
+        "protein": saap.ref_proteins or "",
     }
+
+
+def parse_fasta(text: str) -> list[tuple[str, str]]:
+    """Parse FASTA text into [(header, sequence)]; header keeps its leading '>'."""
+    entries: list[tuple[str, str]] = []
+    header, seq = None, []
+    for line in text.splitlines():
+        line = line.rstrip()
+        if line.startswith(">"):
+            if header is not None:
+                entries.append((header, "".join(seq)))
+            header, seq = line, []
+        elif header is not None:
+            seq.append(line.strip())
+    if header is not None:
+        entries.append((header, "".join(seq)))
+    return entries
 
 
 def _wrap(seq: str, width: int) -> str:
@@ -63,14 +111,22 @@ def generate_fasta(
     *,
     species_by_id: dict[int, str] | None = None,
     default_species: str = "",
+    token: str = DEFAULT_TOKEN,
+    token_by_id: dict[int, str] | None = None,
+    include_decoys: bool = False,
+    reference_fasta: str | None = None,
     line_width: int = DEFAULT_LINE_WIDTH,
     header_template: str = DEFAULT_HEADER,
 ) -> str:
     species_by_id = species_by_id or {}
-    out: list[str] = []
+    token_by_id = token_by_id or {}
+
+    # Forward (target) entries: the SAAP variant peptides ...
+    entries: list[tuple[str, str]] = []
     for saap in saaps:
         species = species_by_id.get(saap.id) or default_species
-        fields = _fields(saap, species)
+        tok = sanitize_token(token_by_id.get(saap.id) or token)
+        fields = _fields(saap, species, tok)
         try:
             header = header_template.format(**fields)
         except (KeyError, IndexError, ValueError):
@@ -78,6 +134,20 @@ def generate_fasta(
             header = DEFAULT_HEADER.format(**fields)
         if not header.startswith(">"):
             header = ">" + header
+        entries.append((header, saap.mtp_seq))
+
+    # ... then the reference proteome (if supplied), passed through unchanged.
+    if reference_fasta:
+        entries.extend(parse_fasta(reference_fasta))
+
+    out: list[str] = []
+    for header, seq in entries:
         out.append(header)
-        out.append(_wrap(saap.mtp_seq, line_width))
+        out.append(_wrap(seq, line_width))
+    if include_decoys:
+        # '>rev_' + original header, sequence reversed, for EVERY target (SAAP
+        # and reference), appended after all forwards (matches the pipeline).
+        for header, seq in entries:
+            out.append(">rev_" + header[1:])
+            out.append(_wrap(seq[::-1], line_width))
     return "\n".join(out) + ("\n" if out else "")

@@ -114,8 +114,21 @@ label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-
 /* Table */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { padding: 9px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-word; overflow-wrap: anywhere; }
 th { background: var(--surface-2); color: var(--muted); font-weight: 600; user-select: none; position: sticky; top: 0; font-size: 12px; }
+
+/* resizable columns (Browse) */
+table.table-resizable { table-layout: fixed; width: auto; }
+.col-resizer {
+  position: absolute; top: 0; right: 0; width: 10px; height: 100%;
+  cursor: col-resize; user-select: none; touch-action: none; z-index: 3;
+}
+/* always-visible divider line at each header's right edge */
+.col-resizer::after {
+  content: ""; position: absolute; right: 0; top: 0; height: 100%;
+  width: 2px; background: var(--border-strong);
+}
+.col-resizer:hover::after, .col-resizer:active::after { background: var(--accent); width: 3px; }
 th.sortable { cursor: pointer; }
 th.sortable:hover { color: var(--text); }
 th .arrow { color: var(--accent); }

@@ -66,11 +66,11 @@ const api = {
     if (!r.ok) throw new Error(body.detail || "Delete failed");
     return body;
   },
-  async exportFasta(payload) {
-    const r = await fetch("/api/export/fasta", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  async exportFasta(payload, refFile) {
+    const fd = new FormData();
+    fd.append("payload", JSON.stringify(payload));
+    if (refFile) fd.append("reference", refFile);
+    const r = await fetch("/api/export/fasta", { method: "POST", body: fd });
     if (!r.ok) {
       const b = await r.json().catch(() => ({}));
       throw new Error(b.detail || "Export failed");
@@ -107,26 +107,27 @@ function useToast() {
 
 /* ------------------------------- Columns -------------------------------- */
 const COLUMNS = [
-  { key: "mtp_seq", label: "SAAP", sortable: true, cls: "seq" },
-  { key: "bp_seq", label: "Base peptide", sortable: true, cls: "seq" },
-  { key: "aa_sub", label: "AAS", sortable: true },
-  { key: "source_gene", label: "Genes", sortable: true },
-  { key: "ref_proteins", label: "RefProteins", sortable: true },
-  { key: "source_accession", label: "UniProt", sortable: true },
-  { key: "species", label: "Species" },
-  { key: "n_datasets", label: "Datasets", sortable: true },
-  { key: "digests", label: "Digest" },
-  { key: "acquisition_types", label: "Acquisition" },
-  { key: "n_observations", label: "Obs", sortable: true, cls: "num" },
-  { key: "best_saap_pep", label: "Best PEP", sortable: true, cls: "num" },
-  { key: "max_positional_probability", label: "Max PosProb", sortable: true, cls: "num" },
-  { key: "max_evidence_fragments", label: "Max Frags", sortable: true, cls: "num" },
-  { key: "immunoglobulin", label: "Ig" },
-  { key: "trypsin", label: "Tryp" },
-  { key: "missed_cleavage", label: "MissClv" },
-  { key: "aas_at_peptide_terminus", label: "TermAAS" },
-  { key: "greater_than_shared", label: ">Shared" },
+  { key: "mtp_seq", label: "SAAP", sortable: true, cls: "seq", w: 170 },
+  { key: "bp_seq", label: "Base peptide", sortable: true, cls: "seq", w: 170 },
+  { key: "aa_sub", label: "AAS", sortable: true, w: 90 },
+  { key: "source_gene", label: "Genes", sortable: true, w: 120 },
+  { key: "ref_proteins", label: "RefProteins", sortable: true, w: 200 },
+  { key: "source_accession", label: "UniProt", sortable: true, w: 110 },
+  { key: "species", label: "Species", w: 130 },
+  { key: "n_datasets", label: "Datasets", sortable: true, w: 170 },
+  { key: "digests", label: "Digest", w: 140 },
+  { key: "acquisition_types", label: "Acquisition", w: 120 },
+  { key: "n_observations", label: "Obs", sortable: true, cls: "num", w: 70 },
+  { key: "best_saap_pep", label: "Best PEP", sortable: true, cls: "num", w: 100 },
+  { key: "max_positional_probability", label: "Max PosProb", sortable: true, cls: "num", w: 110 },
+  { key: "max_evidence_fragments", label: "Max Frags", sortable: true, cls: "num", w: 90 },
+  { key: "immunoglobulin", label: "Ig", w: 64 },
+  { key: "trypsin", label: "Tryp", w: 70 },
+  { key: "missed_cleavage", label: "MissClv", w: 84 },
+  { key: "aas_at_peptide_terminus", label: "TermAAS", w: 90 },
+  { key: "greater_than_shared", label: ">Shared", w: 90 },
 ];
+const DEFAULT_COL_W = 120;
 
 function chips(arr, cls) {
   return arr && arr.length ? arr.map((v) => <span key={v} className={cls}>{v}</span>) : "—";
@@ -269,6 +270,31 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
   const [selected, setSelected] = useState(() => new Set());
   const [detailId, setDetailId] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [colWidths, setColWidths] = useState({});
+
+  const colW = (c) => colWidths[c.key] ?? c.w ?? DEFAULT_COL_W;
+  const tableWidth = 40 + COLUMNS.reduce((s, c) => s + colW(c), 0);
+  const startResize = (e, key) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const col = COLUMNS.find((c) => c.key === key);
+    const startW = colWidths[key] ?? (col && col.w) ?? DEFAULT_COL_W;
+    const onMove = (ev) => {
+      const w = Math.max(50, startW + (ev.clientX - startX));
+      setColWidths((prev) => ({ ...prev, [key]: w }));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -352,13 +378,18 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
       </div>
 
       <div className="table-wrap">
-        <table>
+        <table className="table-resizable" style={{ width: tableWidth }}>
+          <colgroup>
+            <col style={{ width: 40 }} />
+            {COLUMNS.map((c) => <col key={c.key} style={{ width: colW(c) }} />)}
+          </colgroup>
           <thead>
             <tr>
               <th className="checkcol"><input type="checkbox" checked={allOnPage} onChange={togglePage} /></th>
               {COLUMNS.map((c) => (
                 <th key={c.key} className={c.sortable ? "sortable" : ""} onClick={() => toggleSort(c)}>
                   {c.label}{sort.key === c.key && <span className="arrow"> {sort.order === "asc" ? "▲" : "▼"}</span>}
+                  <span className="col-resizer" onMouseDown={(e) => startResize(e, c.key)} onClick={(e) => e.stopPropagation()} />
                 </th>
               ))}
             </tr>
@@ -540,8 +571,9 @@ function DatasetsTab({ datasets, onChanged, showToast }) {
       </div>
 
       <div className="danger-zone">
-        <h2>Danger zone</h2>
-        <div className="desc">Remove all imported SAAP and observations. Dataset DOIs are preserved.</div>
+        <div className="desc" style={{ color: "var(--danger)", fontWeight: 700 }}>
+          Remove all imported SAAP and observations. Dataset DOIs are preserved.
+        </div>
         <button className="danger" onClick={wipeAll}>Clear all data</button>
       </div>
     </React.Fragment>
@@ -607,19 +639,21 @@ function DetailDrawer({ id, datasetUrl, onClose }) {
 
 /* ----------------------------- Export modal ----------------------------- */
 const DEFAULT_TEMPLATE =
-  ">saap|{accession}|{entry_name} {protein} SAAP variant ({aa_sub}) OS={species} GN={gene} BP={bp_seq}";
+  ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} mistranslated {mid} OS={species} OX={taxid} GN={gene} PE=1 SV=1";
 
 function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
+  const [decoys, setDecoys] = useState(false);
+  const [refFile, setRefFile] = useState(null);
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [busy, setBusy] = useState(false);
 
   const doExport = async () => {
     setBusy(true);
     try {
-      const payload = { header_template: template };
+      const payload = { decoys, header_template: template };
       if (mode === "selected") payload.ids = Array.from(selected);
       else payload.filters = filters;
-      const blob = await api.exportFasta(payload);
+      const blob = await api.exportFasta(payload, refFile);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `saap_variants_${total}.fasta`;
@@ -635,11 +669,21 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Export {total} SAAP to FASTA</h3>
-        <div className="desc">Each entry's sequence is the variant (substituted) peptide. Species (OS=) is taken from each SAAP's Species column.</div>
+        <div className="desc">Each entry's sequence is the variant (mistranslated) peptide. Species (OS=/OX=) and the plex token come from the data.</div>
+        <div className="field">
+          <label>Reference proteome FASTA (optional)</label>
+          <input type="file" accept=".fasta,.fa,.faa,.txt"
+                 onChange={(e) => setRefFile(e.target.files[0] || null)} />
+        </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>
+            <input type="checkbox" checked={decoys} onChange={(e) => setDecoys(e.target.checked)} style={{ width: "auto" }} />
+            Append <code>rev_</code> decoys.
+          </label>
+        </div>
         <div className="field">
           <label>Header template</label>
           <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
-          <div className="hint">Fields: {"{accession} {entry_name} {gene} {protein} {aa_sub} {sub_compact} {bp_seq} {mtp_seq} {species} {id}"}</div>
         </div>
         <div className="actions">
           <button className="ghost" onClick={onClose} disabled={busy}>Cancel</button>

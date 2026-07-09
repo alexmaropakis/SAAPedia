@@ -176,20 +176,53 @@ def stats(db: Session = Depends(get_db)):
 
 # ------------------------------ API: export --------------------------------
 @app.post("/api/export/fasta")
-def export_fasta(req: ExportRequest, db: Session = Depends(get_db)):
+async def export_fasta(
+    payload: str = Form(...),
+    reference: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    """Build a FASTA. `payload` is the JSON ExportRequest; `reference` is an
+    optional proteome FASTA to append (and decoy alongside the SAAP entries)."""
+    try:
+        req = ExportRequest(**json.loads(payload))
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise HTTPException(400, f"Bad export payload: {exc}") from exc
+
     filters = _clean_filters(req.filters) if req.filters else None
     saaps = crud.get_saap_for_export(db, req.ids, filters)
-    if not saaps:
-        raise HTTPException(400, "No SAAP selected for export.")
-    species_map = crud.species_by_saap(db, [s.id for s in saaps])
+
+    ref_text = None
+    if reference is not None and reference.filename:
+        ref_text = (await reference.read()).decode("utf-8", errors="replace")
+
+    if not saaps and not ref_text:
+        raise HTTPException(400, "Nothing to export — no SAAP selected and no reference file.")
+
+    saap_ids = [s.id for s in saaps]
+
+    # If scoped to one species (via filter or override), stamp every SAAP header
+    # with that species; otherwise use each SAAP's own species.
+    override_species = (filters or {}).get("species") or (req.species or "")
+    species_map = None if override_species else crud.species_by_saap(db, saap_ids)
+
+    # The plex/pool token comes from the Dataset column: one dataset filtered ->
+    # that dataset for all; otherwise each SAAP's own dataset(s).
+    override_dataset = (filters or {}).get("dataset")
+    token_map = None if override_dataset else crud.datasets_by_saap(db, saap_ids)
+    default_token = override_dataset or "pooled"
+
     fasta = generate_fasta(
         saaps,
         species_by_id=species_map,
-        default_species=req.species or "",
+        default_species=override_species,
+        token=default_token,
+        token_by_id=token_map,
+        include_decoys=bool(req.decoys),
+        reference_fasta=ref_text,
         line_width=req.line_width or 60,
         header_template=req.header_template or DEFAULT_HEADER,
     )
-    filename = f"saap_variants_{len(saaps)}.fasta"
+    filename = f"saap_export_{len(saaps)}{'_withref' if ref_text else ''}{'_decoys' if req.decoys else ''}.fasta"
     return StreamingResponse(
         io.BytesIO(fasta.encode("utf-8")),
         media_type="text/x-fasta",

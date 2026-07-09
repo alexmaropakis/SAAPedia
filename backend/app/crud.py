@@ -184,6 +184,24 @@ def species_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
     return out
 
 
+def datasets_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
+    """Map saap_id -> dataset token (its distinct datasets joined with '_'),
+    used as the plex/pool label in FASTA headers."""
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Observation.saap_id, func.group_concat(distinct(Observation.dataset)))
+        .where(Observation.saap_id.in_(ids), Observation.dataset.is_not(None))
+        .group_by(Observation.saap_id)
+    ).all()
+    out: dict[int, str] = {}
+    for sid, concat in rows:
+        vals = sorted({v for v in (concat or "").split(",") if v})
+        if vals:
+            out[sid] = "_".join(vals)
+    return out
+
+
 def distinct_values(db: Session):
     def col_values(col):
         return list(db.scalars(
