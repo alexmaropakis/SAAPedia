@@ -5,7 +5,7 @@ from mass-spectrometry proteomics. Import a **CSV or Excel (.xlsx)** file, and t
 and normalizes it, lets you browse / filter / sort, attach source-paper DOIs to datasets, and export
 any selection of SAAP as a **UniProt-style FASTA** of the variant (substituted) peptides.
 
-Everyone runs their own copy on their own machine — download the repo, start it, open a browser.
+Everyone runs their own copy on their own machine — download the repo, start it, open a browser. Downloading the repo comes with already-uploaded SAAP.db.
 
 - **Backend:** FastAPI + SQLite
 - **Frontend:** React (build-free — no Node/npm required)
@@ -46,11 +46,7 @@ Then open **http://127.0.0.1:8000**.
 
 Three tabs:
 
-- **Browse** — one row per unique SAAP with rollups (datasets, digests, species, acquisition types,
-  # observations, # datasets, best PEP, max positional probability, max evidence fragments). Search
-  and filter by dataset / digest / species / acquisition / AAS / flags / min positional probability /
-  max PEP; sort any column; click a peptide to see every underlying observation. Select rows to
-  **export to FASTA** or **delete** — or export everything matching the current filter.
+- **Browse** — one row per unique SAAP with rollups (datasets, digests, species, acquisition types, N observations, N datasets, best PEP, max positional probability, max evidence fragments). Search and filter by dataset / digest / species / acquisition / AAS / flags / min positional probability / max PEP; sort any column; click a peptide to see every underlying observation. Select rows to **export to FASTA** or **delete** — or export everything matching the current filter.
 - **Import** — drop a CSV, TSV, or Excel file. Optionally fill in a **dataset → DOI** map so each
   dataset links to its source paper.
 - **Datasets** — see each dataset with counts, edit DOIs, open the linked paper, or clear all data.
