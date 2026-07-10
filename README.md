@@ -71,8 +71,8 @@ Positional probability, N evidence fragments, UniProt, RefProteins, Genes, misse
 AAS_at_peptide_terminus, greater_than_shared, Immunoglobulin, Trypsin`. Add new header spellings in
 `backend/app/column_map.py`.
 
-### Exports
-## FASTA
+## Exports
+### FASTA
 A major utility of SAAPedia is the ability to export all or a select number of SAAP sequences into a MaxQuant, FragPipe, or other quantitative proteomics engine-compatible UniProt-style FASTA.
 
 Options:
@@ -81,7 +81,7 @@ Options:
 3. Export SAAP sequences only with reverse decoys
 4. Export an entire FASTA containing reference proteome and SAAP sequences with all reverse decoys appended 
 
-## .CSV
+### .CSV
 There is also the option to export the SAAP database as a .csv file for downstream analysis. 
 
 ---
