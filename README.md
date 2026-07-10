@@ -1,7 +1,4 @@
-# SAAPedia
-
-An interactive local database for **single amino-acid polymorphisms / substituted peptides (SAAP)**
-from mass-spectrometry proteomics.
+# SAAPedia: An interactive local database for **substituted amino acid peptide (SAAP)** sequences derived using mass spectrometry proteomics-based methods.
 
 Import a **CSV, TSV, or Excel (.xlsx)** file; SAAPedia de-duplicates and normalizes it, then lets you
 browse, filter, and sort the results, attach source-paper DOIs to datasets, and export any selection
@@ -11,12 +8,12 @@ Everyone runs their own copy locally — download the repo, start it, open a bro
 with a populated `saap.db`, so there's data to explore right away.
 
 - **Backend:** FastAPI + SQLite
-- **Frontend:** React (build-free — no Node/npm)
+- **Frontend:** React
 - **Requirement:** Python 3.9+
 
 ---
 
-## Get it running
+## Starting the app
 
 Download the repo (green **Code ▸ Download ZIP** on GitHub, or `git clone`), then:
 
@@ -54,7 +51,7 @@ Then open **http://127.0.0.1:8000**.
   links to its source paper.
 - **Datasets** — view each dataset with counts, edit DOIs, open the linked paper, or clear all data.
 
-### What counts as one SAAP
+### What counts as one SAAP?
 
 A SAAP is uniquely identified by `(SAAP, BP, AAS)` — the substituted peptide, its base peptide, and
 the amino-acid substitution. Every imported row becomes one **observation** linked to its SAAP.
@@ -81,7 +78,7 @@ only), filter **Species** first, then **Export all filtered**.
 
 ---
 
-## Your data
+## Where is my data?
 
 All data lives in a single SQLite file at `backend/saap.db`. It stays on your machine and is
 per-copy — importing on your machine doesn't affect anyone else's. Delete the file (or use
