@@ -1,32 +1,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
-/* ------------------------------ write auth ------------------------------ */
-let writePassword = sessionStorage.getItem("saap_write_pw") || "";
-function setWritePassword(p) {
-  writePassword = p || "";
-  sessionStorage.setItem("saap_write_pw", writePassword);
-}
-function hasWritePassword() { return !!writePassword; }
-
-// fetch for mutating calls: attaches the password, and on 401 prompts once and retries.
-async function writeFetch(url, opts = {}) {
-  const build = () => {
-    const headers = Object.assign({}, opts.headers, { "X-Write-Password": writePassword });
-    return Object.assign({}, opts, { headers });
-  };
-  let r = await fetch(url, build());
-  if (r.status === 401) {
-    const p = window.prompt("Enter the write password to make changes:");
-    if (p === null) return r;
-    setWritePassword(p);
-    r = await fetch(url, build());
-  }
-  return r;
-}
-
 /* ----------------------------- API helpers ----------------------------- */
 const api = {
-  async config() { return (await fetch("/api/config")).json(); },
   async stats() { return (await fetch("/api/stats")).json(); },
   async facets() { return (await fetch("/api/facets")).json(); },
   async datasets() { return (await fetch("/api/datasets")).json(); },
@@ -44,13 +19,13 @@ const api = {
     const fd = new FormData();
     fd.append("file", file);
     if (doiMap && Object.keys(doiMap).length) fd.append("dataset_doi_map", JSON.stringify(doiMap));
-    const r = await writeFetch("/api/upload", { method: "POST", body: fd });
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || "Upload failed");
     return body;
   },
   async saveDatasetDois(map) {
-    const r = await writeFetch("/api/datasets", {
+    const r = await fetch("/api/datasets", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ map }),
     });
@@ -58,7 +33,7 @@ const api = {
     return r.json();
   },
   async deleteSaap(payload) {
-    const r = await writeFetch("/api/saap/delete", {
+    const r = await fetch("/api/saap/delete", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -192,8 +167,6 @@ function App() {
   const [stats, setStats] = useState(null);
   const [datasets, setDatasets] = useState([]);
   const [facets, setFacets] = useState({ datasets: [], digests: [], species: [], acquisition_types: [], aa_subs: [] });
-  const [cfg, setCfg] = useState({ write_protected: false });
-  const [unlocked, setUnlocked] = useState(hasWritePassword());
   const [toastNode, showToast] = useToast();
 
   const refreshMeta = useCallback(() => {
@@ -201,16 +174,7 @@ function App() {
     api.facets().then(setFacets).catch(() => {});
     api.datasets().then(setDatasets).catch(() => {});
   }, []);
-  useEffect(() => { refreshMeta(); api.config().then(setCfg).catch(() => {}); }, [refreshMeta]);
-
-  const unlock = () => {
-    const p = window.prompt("Enter the write password to enable editing:");
-    if (p === null) return;
-    setWritePassword(p);
-    setUnlocked(!!p);
-    if (p) showToast("Editing unlocked");
-  };
-  const lock = () => { setWritePassword(""); setUnlocked(false); showToast("Editing locked"); };
+  useEffect(() => { refreshMeta(); }, [refreshMeta]);
 
   const datasetUrl = {};
   datasets.forEach((d) => { if (d.url) datasetUrl[d.name] = d.url; });
@@ -220,11 +184,6 @@ function App() {
       <header className="top">
         <div className="brand">
           <h1>SAAP Database</h1>
-          {cfg.write_protected && (
-            unlocked
-              ? <span className="lockpill unlocked" onClick={lock} title="Click to lock">Editing unlocked · lock</span>
-              : <span className="lockpill" onClick={unlock} title="Click to enter write password">Read-only · unlock to edit</span>
-          )}
         </div>
         <div className="stats">
           <div className="stat"><div className="num">{stats ? stats.n_saap : "—"}</div><div className="lbl">SAAP</div></div>
@@ -244,7 +203,7 @@ function App() {
         <BrowseTab facets={facets} datasetUrl={datasetUrl} onDataChanged={refreshMeta} showToast={showToast} />
       )}
       {tab === "import" && (
-        <ImportTab knownDatasets={facets.datasets} onIngested={() => { refreshMeta(); }} showToast={showToast} />
+        <ImportTab onIngested={() => { refreshMeta(); }} showToast={showToast} />
       )}
       {tab === "datasets" && (
         <DatasetsTab datasets={datasets} onChanged={refreshMeta} showToast={showToast} />
@@ -266,7 +225,8 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [sort, setSort] = useState({ key: "n_observations", order: "desc" });
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
+  const PAGE_SIZES = [25, 50, 100, 200, 500];
   const [selected, setSelected] = useState(() => new Set());
   const [detailId, setDetailId] = useState(null);
   const [showExport, setShowExport] = useState(false);
@@ -300,9 +260,10 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
     setLoading(true);
     api.list({ ...filters, sort: sort.key, order: sort.order, page, page_size: pageSize })
       .then(setData).catch((e) => showToast(e.message, true)).finally(() => setLoading(false));
-  }, [filters, sort, page, showToast]);
+  }, [filters, sort, page, pageSize, showToast]);
   useEffect(() => { load(); }, [load]);
 
+  const changePageSize = (n) => { setPageSize(n); setPage(1); };
   const setFilter = (k, v) => { setFilters((f) => ({ ...f, [k]: v })); setPage(1); };
   const clearFilters = () => { setFilters(EMPTY_FILTERS); setPage(1); };
   const toggleSort = (col) => {
@@ -335,6 +296,18 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const activeFilters = Object.values(filters).filter((v) => v !== "").length;
   const ctx = { openDetail: setDetailId, datasetUrl };
+
+  const pager = (
+    <div className="pager">
+      <label htmlFor="pagesize" className="pager-lbl">Rows</label>
+      <select id="pagesize" value={pageSize} onChange={(e) => changePageSize(Number(e.target.value))}>
+        {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <button className="ghost small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
+      <span>Page {data.page} of {totalPages} · {data.total} SAAP</span>
+      <button className="ghost small" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+    </div>
+  );
 
   return (
     <React.Fragment>
@@ -377,6 +350,8 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
         </div>
       </div>
 
+      {pager}
+
       <div className="table-wrap">
         <table className="table-resizable" style={{ width: tableWidth }}>
           <colgroup>
@@ -409,11 +384,7 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
         </table>
       </div>
 
-      <div className="pager">
-        <button className="ghost small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
-        <span>Page {data.page} of {totalPages} · {data.total} SAAP</span>
-        <button className="ghost small" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
-      </div>
+      {pager}
 
       {detailId && <DetailDrawer id={detailId} datasetUrl={datasetUrl} onClose={() => setDetailId(null)} />}
       {showExport && (
@@ -426,28 +397,17 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
 }
 
 /* ------------------------------ Import tab ------------------------------ */
-function ImportTab({ knownDatasets, onIngested, showToast }) {
+function ImportTab({ onIngested, showToast }) {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const [rows, setRows] = useState([{ dataset: "", doi: "" }]);
   const inputRef = useRef();
-
-  const setRow = (i, field, val) => setRows((rs) => rs.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
-  const addRow = () => setRows((rs) => [...rs, { dataset: "", doi: "" }]);
-  const removeRow = (i) => setRows((rs) => rs.filter((_, idx) => idx !== i));
-
-  const buildMap = () => {
-    const map = {};
-    rows.forEach((r) => { if (r.dataset.trim()) map[r.dataset.trim()] = r.doi.trim(); });
-    return map;
-  };
 
   const handleFile = async (file) => {
     if (!file) return;
     setBusy(true);
     try {
-      const res = await api.upload(file, buildMap());
+      const res = await api.upload(file);
       setResult(res);
       showToast(`Imported ${res.rows_read} rows → ${res.saap_created} new SAAP`);
       onIngested();
@@ -456,54 +416,33 @@ function ImportTab({ knownDatasets, onIngested, showToast }) {
   };
 
   return (
-    <React.Fragment>
-      <div className="card">
-        <h2>Import CSV</h2>
-        <div className="desc">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in.</div>
-        <div className={"drop" + (drag ? " drag" : "")}
-             onClick={() => inputRef.current.click()}
-             onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-             onDragLeave={() => setDrag(false)}
-             onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}>
-          {busy ? "Importing…" : <span><strong>Drop a .csv or .xlsx here</strong> or click to browse</span>}
-          <input ref={inputRef} type="file" accept=".csv,.tsv,.txt,.xlsx" hidden onChange={(e) => handleFile(e.target.files[0])} />
-        </div>
+    <div className="card">
+      <h2>Import CSV</h2>
+      <div className="desc">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in. Attach source-paper DOIs to datasets later under the Datasets tab.</div>
+      <div className={"drop" + (drag ? " drag" : "")}
+           onClick={() => inputRef.current.click()}
+           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+           onDragLeave={() => setDrag(false)}
+           onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}>
+        {busy ? "Importing…" : <span><strong>Drop a .csv or .xlsx here</strong> or click to browse</span>}
+        <input ref={inputRef} type="file" accept=".csv,.tsv,.txt,.xlsx" hidden onChange={(e) => handleFile(e.target.files[0])} />
+      </div>
 
-        {result && (
-          <div className="result">
-            <span className="good">Imported {result.filename}</span>
-            <div className="badge-row">
-              <span className="mini">rows read <b>{result.rows_read}</b></span>
-              <span className="mini">new SAAP <b>{result.saap_created}</b></span>
-              <span className="mini">observations <b>{result.observations_created}</b></span>
-              <span className="mini">duplicates skipped <b>{result.duplicate_observations_skipped}</b></span>
-              <span className="mini">DOIs saved <b>{result.dataset_dois_saved}</b></span>
-              {result.saap_removed_no_uniprot > 0 && <span className="mini warn">removed (no UniProt ID) <b>{result.saap_removed_no_uniprot}</b></span>}
-            </div>
-            {result.columns_unmapped && result.columns_unmapped.length > 0 &&
-              <div className="badge-row"><span className="mini warn">unmapped columns: {result.columns_unmapped.join(", ")}</span></div>}
+      {result && (
+        <div className="result">
+          <span className="good">Imported {result.filename}</span>
+          <div className="badge-row">
+            <span className="mini">rows read <b>{result.rows_read}</b></span>
+            <span className="mini">new SAAP <b>{result.saap_created}</b></span>
+            <span className="mini">observations <b>{result.observations_created}</b></span>
+            <span className="mini">duplicates skipped <b>{result.duplicate_observations_skipped}</b></span>
+            {result.saap_removed_no_uniprot > 0 && <span className="mini warn">removed (no UniProt ID) <b>{result.saap_removed_no_uniprot}</b></span>}
           </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Dataset → paper DOI (optional)</h2>
-        <div className="desc">Attach a paper to each dataset. Applied when you import above; datasets can also be edited later under the Datasets tab.</div>
-        <div className="doi-rows">
-          {rows.map((r, i) => (
-            <div className="doi-row" key={i}>
-              <input className="ds-name" list="known-datasets" placeholder="dataset name"
-                     value={r.dataset} onChange={(e) => setRow(i, "dataset", e.target.value)} />
-              <input placeholder="DOI or URL (e.g. 10.1038/s41586-020-0000-0)"
-                     value={r.doi} onChange={(e) => setRow(i, "doi", e.target.value)} />
-              <button className="ghost small" onClick={() => removeRow(i)} disabled={rows.length === 1}>Remove</button>
-            </div>
-          ))}
-          <datalist id="known-datasets">{knownDatasets.map((d) => <option key={d} value={d} />)}</datalist>
-          <div><button className="ghost small" onClick={addRow}>Add row</button></div>
+          {result.columns_unmapped && result.columns_unmapped.length > 0 &&
+            <div className="badge-row"><span className="mini warn">unmapped columns: {result.columns_unmapped.join(", ")}</span></div>}
         </div>
-      </div>
-    </React.Fragment>
+      )}
+    </div>
   );
 }
 

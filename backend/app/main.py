@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import io
 import json
-import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -23,12 +22,6 @@ from .schemas import ExportRequest
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-# Optional shared "write password". When set, mutating endpoints (import, save
-# DOIs, delete) require the X-Write-Password header to match. Reads and FASTA
-# export are always public. When unset (e.g. local single-user use), writes are
-# open.
-WRITE_PASSWORD = os.environ.get("SAAP_WRITE_PASSWORD") or None
-
 app = FastAPI(title="SAAP Database", version="1.0.0")
 
 
@@ -37,24 +30,12 @@ def _startup():
     init_db()
 
 
-def require_write(x_write_password: str | None = Header(default=None)):
-    """Gate mutating endpoints behind the shared write password (if configured)."""
-    if WRITE_PASSWORD and x_write_password != WRITE_PASSWORD:
-        raise HTTPException(401, "A valid write password is required to make changes.")
-
-
-@app.get("/api/config")
-def config():
-    return {"write_protected": bool(WRITE_PASSWORD)}
-
-
 # ----------------------------- API: ingestion -----------------------------
 @app.post("/api/upload")
 async def upload(
     file: UploadFile = File(...),
     dataset_doi_map: str | None = Form(None),
     db: Session = Depends(get_db),
-    _auth: None = Depends(require_write),
 ):
     if not file.filename or not file.filename.lower().endswith((".csv", ".tsv", ".txt", ".xlsx")):
         raise HTTPException(400, "Please upload a .csv, .tsv, or .xlsx file.")
@@ -80,7 +61,7 @@ def datasets(db: Session = Depends(get_db)):
 
 
 @app.post("/api/datasets")
-def save_dataset_dois(payload: dict, db: Session = Depends(get_db), _auth: None = Depends(require_write)):
+def save_dataset_dois(payload: dict, db: Session = Depends(get_db)):
     mapping = payload.get("map") if isinstance(payload, dict) else None
     if not isinstance(mapping, dict):
         raise HTTPException(400, "Expected {\"map\": {dataset: doi}}.")
@@ -89,7 +70,7 @@ def save_dataset_dois(payload: dict, db: Session = Depends(get_db), _auth: None 
 
 
 @app.post("/api/saap/delete")
-def delete_saap(payload: dict, db: Session = Depends(get_db), _auth: None = Depends(require_write)):
+def delete_saap(payload: dict, db: Session = Depends(get_db)):
     """Bulk delete. Body: {ids:[...]} to delete specific SAAP, or {all:true} to
     wipe every SAAP (and their observations)."""
     ids = payload.get("ids") if isinstance(payload, dict) else None
@@ -209,7 +190,7 @@ async def export_fasta(
     # that dataset for all; otherwise each SAAP's own dataset(s).
     override_dataset = (filters or {}).get("dataset")
     token_map = None if override_dataset else crud.datasets_by_saap(db, saap_ids)
-    default_token = override_dataset or "pooled"
+    default_token = override_dataset or ""
 
     fasta = generate_fasta(
         saaps,

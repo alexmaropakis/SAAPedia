@@ -12,7 +12,7 @@ class ExportRequest(BaseModel):
     ids: Optional[list[int]] = None
     filters: Optional[dict] = None
     species: str = ""          # fallback only; species is taken from the data
-    token: str = "pooled"      # pool/plex label used in the header accession
+    token: str = ""            # pool/plex label used in the header accession
     decoys: bool = False       # append rev_ reversed-sequence decoys
     line_width: int = 60
     header_template: Optional[str] = None

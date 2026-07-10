@@ -20,7 +20,6 @@ DEFAULT_HEADER = (
     "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
 )
 DEFAULT_LINE_WIDTH = 60
-DEFAULT_TOKEN = "pooled"
 
 # species (lowercased, first token if combined) -> (OS name, OX taxonomy id)
 _SPECIES_INFO = {
@@ -48,8 +47,7 @@ def compact_sub(aa_sub: str | None) -> str:
 
 def sanitize_token(token: str | None) -> str:
     """Lowercase, keep alphanumerics/underscores (matches the pipeline's plex token)."""
-    tok = re.sub(r"[^A-Za-z0-9]+", "_", (token or "").strip().lower()).strip("_")
-    return tok or DEFAULT_TOKEN
+    return re.sub(r"[^A-Za-z0-9]+", "_", (token or "").strip().lower()).strip("_")
 
 
 def _resolve_species(species_raw: str) -> tuple[str, str]:
@@ -61,13 +59,13 @@ def _resolve_species(species_raw: str) -> tuple[str, str]:
     return (first.capitalize() if first else "", "")
 
 
-def _fields(saap: SAAP, species: str, token: str) -> dict:
-    accession = saap.source_accession or f"SAAP{saap.id}"
+def _fields(saap: SAAP, species: str, token: str, seq_no: int) -> dict:
+    accession = saap.source_accession or f"SAAP{seq_no}"
     gene = saap.source_gene or "-"
     os_name, ox = _resolve_species(species)
-    mid = f"MTP{saap.id}"
+    mid = f"MTP{seq_no}"
     return {
-        "id": saap.id,
+        "id": seq_no,
         "mid": mid,
         "accession": accession,
         "tok": token,
@@ -111,7 +109,7 @@ def generate_fasta(
     *,
     species_by_id: dict[int, str] | None = None,
     default_species: str = "",
-    token: str = DEFAULT_TOKEN,
+    token: str = "",
     token_by_id: dict[int, str] | None = None,
     include_decoys: bool = False,
     reference_fasta: str | None = None,
@@ -121,12 +119,15 @@ def generate_fasta(
     species_by_id = species_by_id or {}
     token_by_id = token_by_id or {}
 
-    # Forward (target) entries: the SAAP variant peptides ...
+    # Forward (target) entries: the SAAP variant peptides. The MTP number is a
+    # 1-based export-order index (not the DB id), so it stays contiguous and its
+    # max equals the entry count. Note: a given SAAP's number can therefore differ
+    # between exports as the selected set changes.
     entries: list[tuple[str, str]] = []
-    for saap in saaps:
+    for seq_no, saap in enumerate(saaps, start=1):
         species = species_by_id.get(saap.id) or default_species
         tok = sanitize_token(token_by_id.get(saap.id) or token)
-        fields = _fields(saap, species, tok)
+        fields = _fields(saap, species, tok, seq_no)
         try:
             header = header_template.format(**fields)
         except (KeyError, IndexError, ValueError):
