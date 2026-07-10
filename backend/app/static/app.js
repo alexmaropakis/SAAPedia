@@ -447,7 +447,7 @@ function ImportTab({ onIngested, showToast }) {
   return (
     <div className="card">
       <h2>Import CSV</h2>
-      <div className="desc">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in. Attach source-paper DOIs to datasets later under the Datasets tab.</div>
+      <div className="desc full">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in. Attach source-paper DOIs to datasets later under the Datasets tab.</div>
       <div className={"drop" + (drag ? " drag" : "")}
            onClick={() => inputRef.current.click()}
            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}

@@ -229,6 +229,7 @@ header.top {
 }
 .card h2 { font-family: var(--mono); font-size: 13px; font-weight: 700; margin: 0 0 14px; text-transform: uppercase; letter-spacing: .04em; }
 .card .desc { color: var(--muted-strong); font-size: 13px; margin: -6px 0 16px; max-width: 70ch; }
+.card .desc.full { max-width: none; }
 
 /* Buttons */
 button {
