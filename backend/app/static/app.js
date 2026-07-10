@@ -646,7 +646,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Export {total} SAAP</h3>
+        <h3>Export {total} SAAP as {format === "csv" ? ".CSV" : "FASTA"}</h3>
         <div className="field">
           <label>Format</label>
           <div className="segmented">
@@ -656,7 +656,6 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
         </div>
         {format === "fasta" ? (
           <React.Fragment>
-            <div className="desc">Each entry's sequence is the variant (mistranslated) peptide. Species (OS=/OX=) and the plex token come from the data.</div>
             <div className="field">
               <label>Reference proteome FASTA (optional)</label>
               <input type="file" accept=".fasta,.fa,.faa,.txt"
@@ -673,9 +672,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
               <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
             </div>
           </React.Fragment>
-        ) : (
-          <div className="desc">One row per SAAP with the same columns as the Browse table (rollups, flags, and observation counts).</div>
-        )}
+        ) : null}
         <div className="actions">
           <button className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
           <button onClick={doExport} disabled={busy || total === 0}>
