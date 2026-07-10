@@ -11,7 +11,7 @@ with a populated `saap.db`, so there's data to explore right away.
 - **Frontend:** React
 - **Requirement:** Python 3.9+
 
-Find a short introduction to SAAPedia **[here]**(https://docs.google.com/presentation/d/1ZOMBIVukzxbd0Y72HJP_PKo2ZN0wGaXiokHkLZKiyy4/edit?usp=sharing). 
+Find a short introduction to SAAPedia [here](https://docs.google.com/presentation/d/1ZOMBIVukzxbd0Y72HJP_PKo2ZN0wGaXiokHkLZKiyy4/edit?usp=sharing).
 
 ---
 
