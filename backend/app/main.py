@@ -4,6 +4,7 @@ Serves the build-free React single-page app from ./static as well.
 """
 from __future__ import annotations
 
+import csv
 import io
 import json
 from pathlib import Path
@@ -207,6 +208,51 @@ async def export_fasta(
     return StreamingResponse(
         io.BytesIO(fasta.encode("utf-8")),
         media_type="text/x-fasta",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# CSV columns: (rollup key, header label). List-valued fields are joined with "; ".
+_CSV_COLUMNS = [
+    ("mtp_seq", "SAAP"), ("bp_seq", "BP"), ("aa_sub", "AAS"),
+    ("source_gene", "Gene"), ("source_accession", "UniProt"), ("ref_proteins", "RefProteins"),
+    ("n_observations", "N Observations"), ("n_datasets", "N Datasets"),
+    ("datasets", "Datasets"), ("digests", "Digests"), ("species", "Species"),
+    ("acquisition_types", "Data acquisition"),
+    ("best_saap_pep", "Best PEP"), ("max_positional_probability", "Max positional probability"),
+    ("max_evidence_fragments", "Max evidence fragments"),
+    ("immunoglobulin", "Immunoglobulin"), ("trypsin", "Trypsin"),
+    ("missed_cleavage", "Missed cleavage"),
+    ("aas_at_peptide_terminus", "AAS at peptide terminus"),
+    ("greater_than_shared", "Greater than shared"),
+]
+
+
+@app.post("/api/export/csv")
+async def export_csv(req: ExportRequest, db: Session = Depends(get_db)):
+    """Export the Browse rollup rows (selected ids, or everything matching the
+    current filter) as a CSV."""
+    filters = _clean_filters(req.filters) if req.filters else None
+    rows = crud.get_rollups_for_export(db, req.ids, filters)
+    if not rows:
+        raise HTTPException(400, "Nothing to export — no SAAP selected or matching the filter.")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([label for _, label in _CSV_COLUMNS])
+    for r in rows:
+        out = []
+        for key, _ in _CSV_COLUMNS:
+            val = r.get(key)
+            if isinstance(val, list):
+                val = "; ".join(str(v) for v in val)
+            out.append("" if val is None else val)
+        writer.writerow(out)
+
+    filename = f"saap_export_{len(rows)}.csv"
+    return StreamingResponse(
+        io.BytesIO(buf.getvalue().encode("utf-8-sig")),
+        media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

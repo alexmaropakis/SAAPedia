@@ -166,6 +166,20 @@ def get_saap_for_export(db: Session, ids: list[int] | None, filters: dict | None
     return db.scalars(stmt).all()
 
 
+def get_rollups_for_export(db: Session, ids: list[int] | None, filters: dict | None):
+    """Rollup rows (same shape as the Browse table) for CSV export — all matches,
+    no pagination. Explicit ids take precedence over filters."""
+    agg = _aggregate_subquery()
+    agg_cols = [agg.c[name] for name in _AGG_NAMES]
+    stmt = select(SAAP, *agg_cols).join(agg, agg.c.saap_id == SAAP.id)
+    if ids:
+        stmt = stmt.where(SAAP.id.in_(ids))
+    else:
+        stmt = _apply_filters(stmt, agg, **(filters or {}))
+    stmt = stmt.order_by(SAAP.id)
+    return [_row_to_dict(row) for row in db.execute(stmt).all()]
+
+
 def species_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
     """Map saap_id -> species string (from the data). Multiple species for one
     SAAP are joined with '/'."""

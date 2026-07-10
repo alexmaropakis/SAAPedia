@@ -280,6 +280,13 @@ select option { color: var(--text); background: var(--surface); }
 .filters { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 
+/* segmented toggle (e.g. export format) */
+.segmented { display: inline-flex; border: 1.5px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; align-self: flex-start; }
+.segmented button { background: var(--surface); color: var(--accent); border: none; border-radius: 0; padding: 7px 18px; }
+.segmented button + button { border-left: 1.5px solid var(--line); }
+.segmented button.on { background: var(--accent); color: var(--surface); }
+.segmented button:not(.on):hover { background: var(--accent-weak); color: var(--accent); }
+
 /* Table */
 .table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }

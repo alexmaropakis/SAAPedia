@@ -52,6 +52,18 @@ const api = {
     }
     return r.blob();
   },
+  async exportCsv(payload) {
+    const r = await fetch("/api/export/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      throw new Error(b.detail || "Export failed");
+    }
+    return r.blob();
+  },
 };
 
 /* ------------------------------ formatting ------------------------------ */
@@ -598,24 +610,34 @@ const DEFAULT_TEMPLATE =
   ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} mistranslated {mid} OS={species} OX={taxid} GN={gene} PE=1 SV=1";
 
 function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
+  const [format, setFormat] = useState("fasta");
   const [decoys, setDecoys] = useState(false);
   const [refFile, setRefFile] = useState(null);
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [busy, setBusy] = useState(false);
 
+  const download = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const doExport = async () => {
     setBusy(true);
     try {
-      const payload = { decoys, header_template: template };
+      const payload = {};
       if (mode === "selected") payload.ids = Array.from(selected);
       else payload.filters = filters;
-      const blob = await api.exportFasta(payload, refFile);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `saap_variants_${total}.fasta`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      showToast(`Exported ${total} SAAP to FASTA`);
+      if (format === "csv") {
+        download(await api.exportCsv(payload), `saap_export_${total}.csv`);
+        showToast(`Exported ${total} SAAP to CSV`);
+      } else {
+        const blob = await api.exportFasta({ ...payload, decoys, header_template: template }, refFile);
+        download(blob, `saap_variants_${total}.fasta`);
+        showToast(`Exported ${total} SAAP to FASTA`);
+      }
       onClose();
     } catch (e) { showToast(e.message, true); }
     finally { setBusy(false); }
@@ -624,26 +646,41 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Export {total} SAAP to FASTA</h3>
-        <div className="desc">Each entry's sequence is the variant (mistranslated) peptide. Species (OS=/OX=) and the plex token come from the data.</div>
+        <h3>Export {total} SAAP</h3>
         <div className="field">
-          <label>Reference proteome FASTA (optional)</label>
-          <input type="file" accept=".fasta,.fa,.faa,.txt"
-                 onChange={(e) => setRefFile(e.target.files[0] || null)} />
+          <label>Format</label>
+          <div className="segmented">
+            <button className={format === "fasta" ? "on" : ""} onClick={() => setFormat("fasta")}>FASTA</button>
+            <button className={format === "csv" ? "on" : ""} onClick={() => setFormat("csv")}>CSV</button>
+          </div>
         </div>
-        <div className="field">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>
-            <input type="checkbox" checked={decoys} onChange={(e) => setDecoys(e.target.checked)} style={{ width: "auto" }} />
-            Append <code>rev_</code> decoys.
-          </label>
-        </div>
-        <div className="field">
-          <label>Header template</label>
-          <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
-        </div>
+        {format === "fasta" ? (
+          <React.Fragment>
+            <div className="desc">Each entry's sequence is the variant (mistranslated) peptide. Species (OS=/OX=) and the plex token come from the data.</div>
+            <div className="field">
+              <label>Reference proteome FASTA (optional)</label>
+              <input type="file" accept=".fasta,.fa,.faa,.txt"
+                     onChange={(e) => setRefFile(e.target.files[0] || null)} />
+            </div>
+            <div className="field">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>
+                <input type="checkbox" checked={decoys} onChange={(e) => setDecoys(e.target.checked)} style={{ width: "auto" }} />
+                Append <code>rev_</code> decoys.
+              </label>
+            </div>
+            <div className="field">
+              <label>Header template</label>
+              <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
+            </div>
+          </React.Fragment>
+        ) : (
+          <div className="desc">One row per SAAP with the same columns as the Browse table (rollups, flags, and observation counts).</div>
+        )}
         <div className="actions">
           <button className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
-          <button onClick={doExport} disabled={busy || total === 0}>{busy ? "Generating…" : "Download .fasta"}</button>
+          <button onClick={doExport} disabled={busy || total === 0}>
+            {busy ? "Generating…" : format === "csv" ? "Download .csv" : "Download .fasta"}
+          </button>
         </div>
       </div>
     </div>
