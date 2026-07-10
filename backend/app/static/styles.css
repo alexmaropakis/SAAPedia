@@ -53,7 +53,7 @@
   --warn-fg: #8a6a2f; --warn-bg: #f0ead6; --warn-border: #cdb984;
 
   /* logo — punchier than the UI palette, still adapts per theme */
-  --logo-large: #2f7d74; --logo-small: #b3793f; --logo-mrna: #384a42;
+  --logo-large: #2f7d74; --logo-small: #b3793f; --logo-mrna: #6f8c7e;
   --logo-b1: #c9663f; --logo-b2: #3f6f9c; --logo-b3: #5f9e46; --logo-b4: #e0a52e;
 
   --radius: 4px;

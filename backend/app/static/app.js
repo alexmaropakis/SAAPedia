@@ -184,7 +184,7 @@ function App() {
       <header className="top">
         <div className="brand">
           <a className="logo-link" href="https://github.com/alexmaropakis/SAAPedia" target="_blank" rel="noopener noreferrer" aria-label="SAAPedia on GitHub">
-          <svg className="logo" viewBox="0 0 64 64" width="52" height="52" aria-hidden="true">
+          <svg className="logo" viewBox="0 0 64 64" width="62" height="62" aria-hidden="true">
             {/* mRNA strand (threads through the ribosome; only the ends show) */}
             <path className="logo-mrna-strand" d="M5 39 H59" stroke="var(--logo-mrna)" strokeWidth="3" strokeLinecap="round" fill="none" />
             <circle cx="8" cy="39" r="1.8" fill="var(--logo-mrna)" />
