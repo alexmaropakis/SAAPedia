@@ -144,7 +144,54 @@ header.top {
   padding: 28px 0 22px;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand .logo { flex: none; display: block; }
+.brand .logo-link { flex: none; display: block; line-height: 0; border-radius: 50%; outline-offset: 3px; }
+.brand .logo { flex: none; display: block; transition: transform 0.3s ease; transform-origin: 28px 36px; }
+
+/* hover animation: pretend to translate — mRNA feeds through while the
+   small subunit ratchets and amino-acid beads pop onto a growing chain */
+.brand .logo-link:hover .logo { transform: scale(1.06); }
+
+/* mRNA scrolls right-to-left, like codons being read */
+.brand .logo-mrna-strand { transition: stroke-dasharray 0.2s ease; }
+.brand .logo-link:hover .logo-mrna-strand {
+  stroke-dasharray: 3 4;
+  animation: mrna-feed 0.7s linear infinite;
+}
+
+/* small subunit ratchets once per codon */
+.brand .logo-small { transform-box: fill-box; transform-origin: center; }
+.brand .logo-link:hover .logo-small { animation: subunit-ratchet 0.7s ease-in-out infinite; }
+
+/* beads pop onto the chain in sequence, forming the polypeptide, then loop */
+.brand .logo-bead { transform-box: fill-box; transform-origin: center; }
+.brand .logo-link:hover .logo-bead { animation: bead-add 2.8s ease-in-out infinite; }
+.brand .logo-link:hover .b1 { animation-delay: 0s; }
+.brand .logo-link:hover .b2 { animation-delay: 0.7s; }
+.brand .logo-link:hover .b3 { animation-delay: 1.4s; }
+.brand .logo-link:hover .b4 { animation-delay: 2.1s; }
+
+@keyframes mrna-feed {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -7; }
+}
+@keyframes subunit-ratchet {
+  0%, 100% { transform: translateX(0); }
+  40% { transform: translateX(1.5px); }
+  60% { transform: translateX(1.5px); }
+}
+@keyframes bead-add {
+  0%   { opacity: 0; transform: scale(0); }
+  6%   { opacity: 1; transform: scale(1.5); }
+  12%  { transform: scale(1); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.6); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand .logo, .brand .logo-link:hover .logo,
+  .brand .logo-link:hover .logo-mrna-strand,
+  .brand .logo-link:hover .logo-small,
+  .brand .logo-link:hover .logo-bead { animation: none; transition: none; transform: none; }
+}
 .brand h1 {
   font-family: var(--mono); font-size: 30px; font-weight: 700; margin: 0; letter-spacing: -0.01em;
   text-transform: uppercase;

@@ -183,21 +183,23 @@ function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
+          <a className="logo-link" href="https://github.com/alexmaropakis/SAAPedia" target="_blank" rel="noopener noreferrer" aria-label="SAAPedia on GitHub">
           <svg className="logo" viewBox="0 0 64 64" width="52" height="52" aria-hidden="true">
             {/* mRNA strand (threads through the ribosome; only the ends show) */}
-            <path d="M5 39 H59" stroke="var(--logo-mrna)" strokeWidth="3" strokeLinecap="round" fill="none" />
+            <path className="logo-mrna-strand" d="M5 39 H59" stroke="var(--logo-mrna)" strokeWidth="3" strokeLinecap="round" fill="none" />
             <circle cx="8" cy="39" r="1.8" fill="var(--logo-mrna)" />
             <circle cx="52" cy="39" r="1.8" fill="var(--logo-mrna)" />
             {/* large + small subunits */}
-            <ellipse cx="28" cy="29" rx="17" ry="14" fill="var(--logo-large)" />
-            <ellipse cx="28" cy="44" rx="13" ry="8.5" fill="var(--logo-small)" />
+            <ellipse className="logo-large" cx="28" cy="29" rx="17" ry="14" fill="var(--logo-large)" />
+            <ellipse className="logo-small" cx="28" cy="44" rx="13" ry="8.5" fill="var(--logo-small)" />
             {/* growing polypeptide: backbone + amino-acid beads */}
             <path d="M38 19 Q48 8 61 13" stroke="var(--logo-mrna)" strokeWidth="2" strokeLinecap="round" fill="none" />
-            <circle cx="38" cy="19" r="3.5" fill="var(--logo-b1)" />
-            <circle cx="46" cy="12" r="3.5" fill="var(--logo-b2)" />
-            <circle cx="54" cy="11" r="3.5" fill="var(--logo-b3)" />
-            <circle cx="61" cy="13" r="3.5" fill="var(--logo-b4)" />
+            <circle className="logo-bead b1" cx="38" cy="19" r="3.5" fill="var(--logo-b1)" />
+            <circle className="logo-bead b2" cx="46" cy="12" r="3.5" fill="var(--logo-b2)" />
+            <circle className="logo-bead b3" cx="54" cy="11" r="3.5" fill="var(--logo-b3)" />
+            <circle className="logo-bead b4" cx="61" cy="13" r="3.5" fill="var(--logo-b4)" />
           </svg>
+          </a>
           <h1>SAAPedia</h1>
         </div>
         <div className="stats">
