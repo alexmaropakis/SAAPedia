@@ -2,10 +2,10 @@
 
 Import a **CSV, TSV, or Excel (.xlsx)** file; SAAPedia de-duplicates and normalizes it, then lets you
 browse, filter, and sort the results, attach source-paper DOIs to datasets, and export any selection
-as a **UniProt-style FASTA** of the variant peptides.
+as a **UniProt-style FASTA** of the SAAPs.
 
 Everyone runs their own copy locally — download the repo, start it, open a browser. The repo ships
-with a populated `saap.db`, so there's data to explore right away.
+with a populated `saap.db` from [Tsour et al., Nature 2026](https://www.nature.com/articles/s41586-026-10678-2) and our other research at the Slavov Lab, so there's data to explore right away.
 
 - **Backend:** FastAPI + SQLite
 - **Frontend:** React
@@ -27,7 +27,7 @@ cd SAAPedia
 ```
 
 The first run creates a Python environment and installs dependencies (~15 s); later runs start in a
-second or two. When you see `running at: http://127.0.0.1:8000`, open that URL. Stop with **Ctrl+C**.
+second or two. When you see `running at: http://127.0.0.1:8000`, open that URL. Stop with **Ctrl+C** on Windows or **Option+C** on Mac.
 
 ### Windows (or if `run.sh` won't run)
 
@@ -48,10 +48,9 @@ Then open **http://127.0.0.1:8000**.
 - **Browse** — one row per unique SAAP with rollups (observations, datasets, species, best PEP, max
   positional probability, and more). Search, filter (dataset, digest, species, acquisition, AAS,
   flags, thresholds), and sort any column. Click a peptide to see every underlying observation.
-  Select rows to **export to FASTA** or **delete** — or export everything matching the current filter.
-- **Import** — drop a CSV, TSV, or Excel file. Optionally add a **dataset → DOI** map so each dataset
-  links to its source paper.
-- **Datasets** — view each dataset with counts, edit DOIs, open the linked paper, or clear all data.
+  Select rows to **export to FASTA** or **delete** or export everything matching the current filter.
+- **Import** — drop a CSV, TSV, or Excel file.
+- **Datasets** — view each dataset with counts, edit Dataset to DOI mappings, open the linked paper, or clear all data.
 
 ### What counts as one SAAP?
 
@@ -72,11 +71,18 @@ Positional probability, N evidence fragments, UniProt, RefProteins, Genes, misse
 AAS_at_peptide_terminus, greater_than_shared, Immunoglobulin, Trypsin`. Add new header spellings in
 `backend/app/column_map.py`.
 
-### FASTA export
+### Exports
+## FASTA
+A major utility of SAAPedia is the ability to export all or a select number of SAAP sequences into a MaxQuant, FragPipe, or other quantitative proteomics engine-compatible UniProt-style FASTA.
 
-Each selected SAAP emits one entry — the **variant peptide** sequence with a UniProt-style header,
-including species (`OS=`) from the data. To build a species-specific search database (e.g. human
-only), filter **Species** first, then **Export all filtered**.
+Options:
+1. Export SAAP sequences alone as their own FASTA
+2. Export SAAP sequences appended to a reference proteome (uploaded from local desktop)
+3. Export SAAP sequences only with reverse decoys
+4. Export an entire FASTA containing reference proteome and SAAP sequences with all reverse decoys appended 
+
+## .CSV
+There is also the option to export the SAAP database as a .csv file for downstream analysis. 
 
 ---
 
