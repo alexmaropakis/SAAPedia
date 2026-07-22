@@ -3,22 +3,21 @@
 
 Header format (matches the lab's build pipeline):
 
-    >sp|{accession}-MTP{id}-{token}|{gene}-mut {gene} mistranslated MTP{id} \
+    >sp|{accession}-MTP{id}-{token}|{gene}-mut {gene} substituted SAAP{id} \
        OS={Species} OX={taxid} GN={gene} PE=1 SV=1
 
-The accession component is made unique per entry by the internal SAAP id (MTP{id}),
+The accession component is made unique per entry by the internal SAAP id (SAAP{id}),
 and `token` is the pool/plex label chosen at export time.
 """
 from __future__ import annotations
-
 import re
-
 from .models import SAAP
 
 DEFAULT_HEADER = (
-    ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} mistranslated {mid} "
+    ">sp|{accession}-{mid}|{gene}-mut {gene} substituted {mid} "
     "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
 )
+
 DEFAULT_LINE_WIDTH = 60
 
 # species (lowercased, first token if combined) -> (OS name, OX taxonomy id)
@@ -76,7 +75,7 @@ def _fields(saap: SAAP, species: str, token: str, seq_no: int) -> dict:
     accession = saap.source_accession or f"SAAP{seq_no}"
     gene = first_value(saap.source_gene) or "-"
     os_name, ox = _resolve_species(species)
-    mid = f"MTP{seq_no}"
+    mid = f"SAAP{seq_no}"
     return {
         "id": seq_no,
         "mid": mid,
