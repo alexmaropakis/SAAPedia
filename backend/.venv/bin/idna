@@ -1,4 +1,6 @@
-#!/Users/alexmaropakis/Downloads/SAAPedia/backend/.venv/bin/python3
+#!/bin/sh
+'''exec' "/Users/alexmaropakis/Downloads/SAAPedia 2/backend/.venv/bin/python3" "$0" "$@"
+' '''
 import sys
 from idna.cli import main
 if __name__ == '__main__':

@@ -15,6 +15,10 @@ class ExportRequest(BaseModel):
     token: str = ""            # pool/plex label used in the header accession
     decoys: bool = False       # append rev_ reversed-sequence decoys
     base_peptides: bool = False  # also emit each SAAP's base peptide (BP)
+    # "peptide" = substituted peptide sequences (default);
+    # "protein" = full-length reference protein with the substitution applied,
+    # which is what a multi-digest search needs.
+    entry_mode: str = "peptide"
     line_width: int = 60
     header_template: Optional[str] = None
     base_header_template: Optional[str] = None

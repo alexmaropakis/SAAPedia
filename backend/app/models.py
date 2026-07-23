@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -52,6 +52,10 @@ class SAAP(Base):
     ensembl_protein: Mapped[Optional[str]] = mapped_column(String, nullable=True)               # ENSP...
     protein_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     protein_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Canonical protein sequence from UniProt, cached at annotation time. Needed
+    # to emit full-length protein entries (with the substitution applied in
+    # place) rather than bare peptides — see fasta.py `entry_mode="protein"`.
+    protein_sequence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # 1-based index of the substituted residue within the full protein, and the
     # 1-based offset of the peptide's first residue. Both derived by locating
     # bp_seq in the canonical protein sequence.

@@ -50,7 +50,12 @@ const api = {
       const b = await r.json().catch(() => ({}));
       throw new Error(b.detail || "Export failed");
     }
-    return r.blob();
+    // Return the count alongside the blob rather than as a property on it —
+    // expando properties on host objects aren't reliable across browsers.
+    return {
+      blob: await r.blob(),
+      skipped: Number(r.headers.get("X-SAAP-Skipped") || 0),
+    };
   },
   async exportPairs(payload) {
     const r = await fetch("/api/export/pairs", {
@@ -656,6 +661,9 @@ function DetailDrawer({ id, datasetUrl, onClose }) {
 const DEFAULT_TEMPLATE =
   ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} substituted {mid} OS={species} OX={taxid} GN={gene} PE=1 SV=1";
 
+const DEFAULT_PROTEIN_TEMPLATE =
+  ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} substituted {mid} {sub_compact}@{position} OS={species} OX={taxid} GN={gene} PE=1 SV=1";
+
 const DEFAULT_BASE_TEMPLATE =
   ">sp|{accession}-{bid}-{tok}|{gene}-base {gene} base peptide {bid} OS={species} OX={taxid} GN={gene} PE=1 SV=1";
 
@@ -663,10 +671,20 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
   const [format, setFormat] = useState("fasta");
   const [decoys, setDecoys] = useState(false);
   const [basePeptides, setBasePeptides] = useState(false);
+  const [entryMode, setEntryMode] = useState("peptide");
   const [refFile, setRefFile] = useState(null);
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [baseTemplate, setBaseTemplate] = useState(DEFAULT_BASE_TEMPLATE);
   const [busy, setBusy] = useState(false);
+
+  const changeEntryMode = (mode) => {
+    setEntryMode(mode);
+    // Swap to the matching default template unless the user edited it.
+    setTemplate((cur) =>
+      cur === DEFAULT_TEMPLATE || cur === DEFAULT_PROTEIN_TEMPLATE
+        ? (mode === "protein" ? DEFAULT_PROTEIN_TEMPLATE : DEFAULT_TEMPLATE)
+        : cur);
+  };
 
   const download = (blob, name) => {
     const url = URL.createObjectURL(blob);
@@ -689,14 +707,19 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
         download(await api.exportPairs(payload), `saap_bp_pairs_${total}.csv`);
         showToast(`Exported ${total} SAAP-BP pairs`);
       } else {
-        const blob = await api.exportFasta({
+        const { blob, skipped } = await api.exportFasta({
           ...payload, decoys,
-          base_peptides: basePeptides,
+          entry_mode: entryMode,
+          base_peptides: entryMode === "protein" ? false : basePeptides,
           header_template: template,
           base_header_template: baseTemplate,
         }, refFile);
-        download(blob, `saap_variants_${total}.fasta`);
-        showToast(`Exported ${total} SAAP to FASTA${basePeptides ? " (with base peptides)" : ""}`);
+        download(blob, entryMode === "protein"
+          ? `saap_proteins_${total}.fasta` : `saap_variants_${total}.fasta`);
+        showToast(
+          `Exported ${total} SAAP as ${entryMode === "protein" ? "full-length proteins" : "peptides"}` +
+          (skipped ? ` · ${skipped} skipped (not annotated)` : ""),
+          skipped > 0 && skipped >= total);
       }
       onClose();
     } catch (e) { showToast(e.message, true); }
@@ -725,6 +748,20 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
         {format === "fasta" ? (
           <React.Fragment>
             <div className="field">
+              <label>Entry type</label>
+              <div className="segmented">
+                <button className={entryMode === "peptide" ? "on" : ""}
+                        onClick={() => changeEntryMode("peptide")}>Peptides</button>
+                <button className={entryMode === "protein" ? "on" : ""}
+                        onClick={() => changeEntryMode("protein")}>Full proteins</button>
+              </div>
+              <p className="hint">
+                {entryMode === "protein"
+                  ? "Each SAAP is written as its complete reference protein with the substitution applied in place, plus the unmodified reference once per accession. Use this for multi-digest searches — the variant site stays reachable by whatever peptides each protease generates. Requires Annotate to have been run."
+                  : "Each SAAP is written as the substituted peptide sequence only. Suitable when searching the same protease the SAAPs were observed with."}
+              </p>
+            </div>
+            <div className="field">
               <label>Reference proteome FASTA (optional)</label>
               <input type="file" accept=".fasta,.fa,.faa,.txt"
                      onChange={(e) => setRefFile(e.target.files[0] || null)} />
@@ -735,17 +772,19 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
                 Append <code>rev_</code> decoys.
               </label>
             </div>
+            {entryMode === "peptide" ? (
+              <div className="field">
+                <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>
+                  <input type="checkbox" checked={basePeptides} onChange={(e) => setBasePeptides(e.target.checked)} style={{ width: "auto" }} />
+                  Also export base peptides (BP).
+                </label>
+              </div>
+            ) : null}
             <div className="field">
-              <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>
-                <input type="checkbox" checked={basePeptides} onChange={(e) => setBasePeptides(e.target.checked)} style={{ width: "auto" }} />
-                Also export base peptides (BP).
-              </label>
-            </div>
-            <div className="field">
-              <label>Header template (substituted peptide)</label>
+              <label>Header template ({entryMode === "protein" ? "variant protein" : "substituted peptide"})</label>
               <textarea rows={3} value={template} onChange={(e) => setTemplate(e.target.value)} />
             </div>
-            {basePeptides ? (
+            {basePeptides && entryMode === "peptide" ? (
               <div className="field">
                 <label>Header template (base peptide)</label>
                 <textarea rows={3} value={baseTemplate} onChange={(e) => setBaseTemplate(e.target.value)} />

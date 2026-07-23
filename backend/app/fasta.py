@@ -35,6 +35,22 @@ BASE_HEADER = (
     "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
 )
 
+# Header for a full-length protein carrying one substitution. Used when
+# entry_mode="protein": the sequence is the whole reference protein with the
+# SAAP's substitution applied in place, so any protease's peptides are
+# searchable — not just the one peptide that was observed.
+PROTEIN_HEADER = (
+    ">sp|{accession}-{mid}-{tok}|{gene}-mut {gene} substituted {mid} {sub_compact}@{position} "
+    "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
+)
+
+# Header for the unmodified reference protein, emitted once per accession
+# alongside the variant proteins in protein mode.
+PROTEIN_BASE_HEADER = (
+    ">sp|{accession}|{gene}-base {gene} reference protein "
+    "OS={species} OX={taxid} GN={gene} PE=1 SV=1"
+)
+
 DEFAULT_LINE_WIDTH = 60
 
 # species (lowercased, first token if combined) -> (OS name, OX taxonomy id)
@@ -150,21 +166,35 @@ def generate_fasta(
     token_by_id: dict[int, str] | None = None,
     include_decoys: bool = False,
     include_base_peptides: bool = False,
+    entry_mode: str = "peptide",
     reference_fasta: str | None = None,
     line_width: int = DEFAULT_LINE_WIDTH,
     header_template: str = DEFAULT_HEADER,
     base_header_template: str = BASE_HEADER,
+    skipped: list[str] | None = None,
 ) -> str:
     """Build the FASTA text.
 
-    include_base_peptides — also emit each SAAP's unmodified base peptide (BP)
-    as its own entry, immediately after the substituted peptide it belongs to.
-    SAAPs with no recorded base peptide, or whose base peptide is identical to
-    the substituted one, are skipped. Base entries are decoyed alongside the
-    rest when include_decoys is set.
+    entry_mode
+      "peptide" (default) — emit the substituted peptide sequence itself. Fine
+          when the search uses the same protease the SAAPs were observed with.
+      "protein" — emit the full-length reference protein with the substitution
+          applied at its position, one entry per SAAP, plus the unmodified
+          reference protein once per accession. Use this for multi-digest
+          searches: the variant residue is then reachable by whatever peptides
+          each protease produces, not only the originally observed peptide.
+          Requires annotation (position + cached sequence); SAAPs lacking it are
+          skipped and reported via `skipped`.
+
+    include_base_peptides — peptide mode only; in protein mode the unmodified
+        reference protein already plays that role.
+
+    skipped — optional list that collects a human-readable reason for every
+        SAAP omitted in protein mode.
     """
     species_by_id = species_by_id or {}
     token_by_id = token_by_id or {}
+    skipped = skipped if skipped is not None else []
 
     def _render(template: str, fields: dict, fallback: str) -> str:
         try:
@@ -174,26 +204,50 @@ def generate_fasta(
             header = fallback.format(**fields)
         return header if header.startswith(">") else ">" + header
 
-    # Forward (target) entries: the substituted peptides. The SAAP number is a
-    # 1-based export-order index (not the DB id), so it stays contiguous and its
-    # max equals the entry count. Note: a given SAAP's number can therefore differ
-    # between exports as the selected set changes.
     entries: list[tuple[str, str]] = []
-    seen_base: set[str] = set()
-    for seq_no, saap in enumerate(saaps, start=1):
-        species = species_by_id.get(saap.id) or default_species
-        tok = sanitize_token(token_by_id.get(saap.id) or token)
-        fields = _fields(saap, species, tok, seq_no)
-        entries.append((_render(header_template, fields, DEFAULT_HEADER), saap.mtp_seq))
 
-        if include_base_peptides:
-            bp = (saap.bp_seq or "").strip()
-            # Skip when absent, unchanged, or already emitted: several SAAPs can
-            # share one base peptide, and duplicate FASTA entries break some
-            # search engines' protein inference.
-            if bp and bp != saap.mtp_seq and bp not in seen_base:
-                seen_base.add(bp)
-                entries.append((_render(base_header_template, fields, BASE_HEADER), bp))
+    if entry_mode == "protein":
+        from .annotate import apply_substitution
+
+        # Reference proteins are emitted once per accession, even though many
+        # SAAPs may map to the same protein.
+        seen_reference: set[str] = set()
+        for seq_no, saap in enumerate(saaps, start=1):
+            species = species_by_id.get(saap.id) or default_species
+            tok = sanitize_token(token_by_id.get(saap.id) or token)
+            fields = _fields(saap, species, tok, seq_no)
+
+            variant, error = apply_substitution(saap)
+            if error:
+                skipped.append(f"SAAP {saap.id} ({saap.mtp_seq}): {error}")
+                continue
+
+            acc = saap.source_accession or ""
+            if acc and acc not in seen_reference and saap.protein_sequence:
+                seen_reference.add(acc)
+                entries.append((_render(PROTEIN_BASE_HEADER, fields, PROTEIN_BASE_HEADER),
+                                saap.protein_sequence))
+            entries.append((_render(header_template, fields, PROTEIN_HEADER), variant))
+    else:
+        # Forward (target) entries: the substituted peptides. The SAAP number is a
+        # 1-based export-order index (not the DB id), so it stays contiguous and its
+        # max equals the entry count. Note: a given SAAP's number can therefore differ
+        # between exports as the selected set changes.
+        seen_base: set[str] = set()
+        for seq_no, saap in enumerate(saaps, start=1):
+            species = species_by_id.get(saap.id) or default_species
+            tok = sanitize_token(token_by_id.get(saap.id) or token)
+            fields = _fields(saap, species, tok, seq_no)
+            entries.append((_render(header_template, fields, DEFAULT_HEADER), saap.mtp_seq))
+
+            if include_base_peptides:
+                bp = (saap.bp_seq or "").strip()
+                # Skip when absent, unchanged, or already emitted: several SAAPs can
+                # share one base peptide, and duplicate FASTA entries break some
+                # search engines' protein inference.
+                if bp and bp != saap.mtp_seq and bp not in seen_base:
+                    seen_base.add(bp)
+                    entries.append((_render(base_header_template, fields, BASE_HEADER), bp))
 
     # ... then the reference proteome (if supplied), passed through unchanged.
     if reference_fasta:

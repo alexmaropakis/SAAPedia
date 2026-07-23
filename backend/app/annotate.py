@@ -289,6 +289,8 @@ def apply_record(saap: SAAP, rec: ProteinRecord, *, overwrite: bool = False) -> 
     _set("ensembl_protein", rec.ensembl_protein)
     _set("protein_description", rec.description)
     _set("protein_length", rec.length)
+    # Cached so full-protein FASTA export works offline, without re-querying.
+    _set("protein_sequence", rec.sequence)
     _set("ref_proteins", rec.description)
     _set("source_gene", rec.gene)
 
@@ -296,6 +298,47 @@ def apply_record(saap: SAAP, rec: ProteinRecord, *, overwrite: bool = False) -> 
     _set("peptide_start", start)
     _set("position_in_protein", pos)
     return changed
+
+
+def apply_substitution(saap: SAAP) -> tuple[Optional[str], Optional[str]]:
+    """Build the full-length protein sequence carrying this SAAP's substitution.
+
+    Returns (variant_sequence, error). Exactly one of the two is set.
+
+    The residue at `position_in_protein` is replaced with the substituted amino
+    acid. Before writing, the residue currently at that position is checked
+    against what the substitution says should be there — a mismatch means the
+    position and the sequence disagree (wrong isoform, stale annotation), so the
+    entry is skipped rather than silently emitting a wrong protein.
+
+    The substituted residue is taken from the SAAP/BP comparison where possible
+    and from the AAS column otherwise, mirroring how the position was derived.
+    """
+    seq = saap.protein_sequence
+    pos = saap.position_in_protein
+    if not seq:
+        return (None, "no cached protein sequence — run annotation first")
+    if pos is None:
+        return (None, "no position in protein")
+    if pos < 1 or pos > len(seq):
+        return (None, f"position {pos} outside protein (length {len(seq)})")
+
+    frm, to = parse_substitution(saap.aa_sub)
+    # Prefer the actual peptide comparison; it reflects the observed data.
+    offset = substitution_offset(saap.bp_seq, saap.mtp_seq)
+    if offset is not None:
+        frm = (saap.bp_seq or "")[offset].upper()
+        to = (saap.mtp_seq or "")[offset].upper()
+    if not to:
+        return (None, f"cannot determine substituted residue from AAS {saap.aa_sub!r}")
+
+    actual = seq[pos - 1].upper()
+    if frm and actual != frm:
+        # I/L are isobaric, so treat them as interchangeable before rejecting.
+        if not (actual in "IL" and frm in "IL"):
+            return (None, f"residue at {pos} is {actual!r}, substitution expects {frm!r}")
+
+    return (seq[:pos - 1] + to + seq[pos:], None)
 
 
 def annotate_saaps(
@@ -322,7 +365,8 @@ def annotate_saaps(
         stmt = stmt.where(SAAP.id.in_(ids))
     if only_missing and not overwrite:
         stmt = stmt.where(or_(SAAP.ensembl_gene.is_(None),
-                              SAAP.position_in_protein.is_(None)))
+                              SAAP.position_in_protein.is_(None),
+                              SAAP.protein_sequence.is_(None)))
     stmt = stmt.order_by(SAAP.id)
     if limit:
         stmt = stmt.limit(limit)

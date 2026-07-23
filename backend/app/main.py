@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from . import annotate as annotate_mod
 from . import crud
 from .database import get_db, init_db
-from .fasta import BASE_HEADER, DEFAULT_HEADER, generate_fasta
+from .fasta import BASE_HEADER, DEFAULT_HEADER, PROTEIN_HEADER, generate_fasta
 from .ingest import ingest_file
 from .models import SAAP, Observation
 from .schemas import AnnotateRequest, ExportRequest
@@ -202,6 +202,11 @@ async def export_fasta(
     token_map = None if override_dataset else crud.datasets_by_saap(db, saap_ids)
     default_token = override_dataset or ""
 
+    entry_mode = "protein" if (req.entry_mode or "").lower() == "protein" else "peptide"
+    # In protein mode the default header carries the substitution and position.
+    default_header = PROTEIN_HEADER if entry_mode == "protein" else DEFAULT_HEADER
+    skipped: list[str] = []
+
     fasta = generate_fasta(
         saaps,
         species_by_id=species_map,
@@ -210,13 +215,22 @@ async def export_fasta(
         token_by_id=token_map,
         include_decoys=bool(req.decoys),
         include_base_peptides=bool(req.base_peptides),
+        entry_mode=entry_mode,
         reference_fasta=ref_text,
         line_width=req.line_width or 60,
-        header_template=req.header_template or DEFAULT_HEADER,
+        header_template=req.header_template or default_header,
         base_header_template=req.base_header_template or BASE_HEADER,
+        skipped=skipped,
     )
+
+    if entry_mode == "protein" and not fasta.strip() and not ref_text:
+        raise HTTPException(400, (
+            "No SAAP could be written as a full-length protein. Run Annotate "
+            "first so each SAAP has a position and a cached protein sequence. "
+            + ("Example: " + skipped[0] if skipped else "")
+        ))
     filename = (
-        f"saap_export_{len(saaps)}"
+        f"saap_{'proteins' if entry_mode == 'protein' else 'export'}_{len(saaps)}"
         f"{'_withbp' if req.base_peptides else ''}"
         f"{'_withref' if ref_text else ''}"
         f"{'_decoys' if req.decoys else ''}.fasta"
@@ -224,7 +238,12 @@ async def export_fasta(
     return StreamingResponse(
         io.BytesIO(fasta.encode("utf-8")),
         media_type="text/x-fasta",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # Lets the UI warn about SAAPs that could not be written.
+            "X-SAAP-Skipped": str(len(skipped)),
+            "Access-Control-Expose-Headers": "X-SAAP-Skipped",
+        },
     )
 
 
@@ -363,7 +382,7 @@ def _clean_filters(filters: dict) -> dict:
 
 # Bumped when backend behaviour changes, so you can confirm which build is
 # actually running (GET /api/health) without inspecting the UI.
-BUILD = "2026.07-saap-ensembl"
+BUILD = "2026.07-saap-ensembl-protein"
 
 
 @app.get("/api/health")
@@ -372,7 +391,8 @@ def health():
         "status": "ok",
         "build": BUILD,
         "features": ["substituted-terminology", "base-peptide-export",
-                     "saap-bp-pairs-csv", "ensembl-annotation"],
+                     "saap-bp-pairs-csv", "ensembl-annotation",
+                     "full-protein-fasta"],
     }
 
 
