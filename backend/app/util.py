@@ -1,13 +1,20 @@
-"""Small shared helpers."""
+# Utility functions
+
 from __future__ import annotations
+
+def normalize_dataset(name: str | None) -> str | None:
+    # Function to capitalize the first letter of a dataset label 
+    # if it is not already capitalized
+    if name is None:
+        return None
+    cleaned = str(name).strip()
+    if not cleaned:
+        return None
+    return cleaned[0].upper() + cleaned[1:]
 
 
 def doi_to_url(doi: str | None) -> str | None:
-    """Turn a raw DOI or URL into a resolvable https link.
-
-    Accepts '10.1038/xyz', 'doi:10.1038/xyz', or a full 'https://doi.org/...'.
-    Returns None for blank input.
-    """
+    # Function to turn raw DOI/URL into a resolvable https
     if not doi:
         return None
     d = doi.strip()

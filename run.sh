@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Launch the SAAP Database app (backend serves the frontend too).
-set -euo pipefail
+
+# Launch SAAPedia
 
 cd "$(dirname "$0")/backend"
 
@@ -11,13 +11,14 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-echo "Installing dependencies..."
+echo "venv initialized, installing dependencies..."
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 echo ""
+echo "All ready!"
 echo "SAAP Database running at: http://${HOST}:${PORT}"
 echo "Press Ctrl+C to stop."
 echo ""

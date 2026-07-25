@@ -1,19 +1,18 @@
-"""FastAPI application: ingestion, querying, and FASTA export for the SAAP DB.
+"""
+FastAPI application: ingestion, querying, and FASTA export for the SAAP DB.
 
 Serves the build-free React single-page app from ./static as well.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import csv
 import io
 import json
 from pathlib import Path
-
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-
 from . import annotate as annotate_mod
 from . import crud
 from .database import get_db, init_db
@@ -32,7 +31,7 @@ def _startup():
     init_db()
 
 
-# ----------------------------- API: ingestion -----------------------------
+# API: ingestion
 @app.post("/api/upload")
 async def upload(
     file: UploadFile = File(...),
@@ -83,7 +82,7 @@ def delete_saap(payload: dict, db: Session = Depends(get_db)):
     return {"deleted": deleted}
 
 
-# ------------------------------ API: querying ------------------------------
+# API: querying
 def _parse_bool(v: str | None):
     if v is None or v == "":
         return None
@@ -144,6 +143,9 @@ def saap_detail(saap_id: int, db: Session = Depends(get_db)):
             "protein_description": saap.protein_description,
             "protein_length": saap.protein_length,
             "position_in_protein": saap.position_in_protein,
+            "positions_all": saap.positions_all,
+            "peptide_starts_all": saap.peptide_starts_all,
+            "n_positions": saap.n_positions,
             "peptide_start": saap.peptide_start,
             "annotation_source": saap.annotation_source,
         },
@@ -165,7 +167,7 @@ def stats(db: Session = Depends(get_db)):
     return crud.stats(db)
 
 
-# ------------------------------ API: export --------------------------------
+# API: export
 @app.post("/api/export/fasta")
 async def export_fasta(
     payload: str = Form(...),
@@ -292,7 +294,7 @@ async def export_csv(req: ExportRequest, db: Session = Depends(get_db)):
     )
 
 
-# --------------------- SAAP–BP pairs CSV (Ensembl view) ---------------------
+# SAAP–BP pairs CSV (Ensembl view)
 # One row per SAAP-BP pair: the swap in BP>SAAP form plus Ensembl/protein
 # context. Deliberately narrow — this is the pair-level companion to the full
 # rollup CSV above.
@@ -303,6 +305,7 @@ _PAIRS_COLUMNS = [
     ("swap", "Swap (BP>SAAP)"),              # e.g. "V>P"
     ("position_in_protein", "Position in protein"),
     ("peptide_start", "Peptide start"),
+    ("n_positions", "Occurrences"),
     ("ensembl_gene", "Ensembl gene ID"),
     ("ensembl_transcript", "Ensembl transcript ID"),
     ("ensembl_protein", "Ensembl protein ID"),
@@ -336,7 +339,7 @@ async def export_pairs_csv(req: ExportRequest, db: Session = Depends(get_db)):
     )
 
 
-# ---------------------------- API: annotation ------------------------------
+# API: annotation 
 @app.post("/api/annotate")
 def annotate(req: AnnotateRequest, db: Session = Depends(get_db)):
     """Resolve Ensembl IDs, protein description/length and the substitution
@@ -382,7 +385,7 @@ def _clean_filters(filters: dict) -> dict:
 
 # Bumped when backend behaviour changes, so you can confirm which build is
 # actually running (GET /api/health) without inspecting the UI.
-BUILD = "2026.07-saap-ensembl-protein"
+BUILD = "2026.07-saap-species-rule"
 
 
 @app.get("/api/health")
@@ -392,11 +395,12 @@ def health():
         "build": BUILD,
         "features": ["substituted-terminology", "base-peptide-export",
                      "saap-bp-pairs-csv", "ensembl-annotation",
-                     "full-protein-fasta"],
+                     "full-protein-fasta", "keep-unmapped-saap",
+                     "dataset-name-normalization", "themes", "peptide-sequence-lookup"],
     }
 
 
-# ------------------------- static single-page app --------------------------
+# static single-page app 
 # Mounted last so /api/* routes take precedence.
 class _NoCacheStaticFiles(StaticFiles):
     """Serve the SPA with caching disabled.

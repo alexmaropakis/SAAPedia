@@ -10,6 +10,7 @@ from .util import doi_to_url
 # Sort keys the API accepts.
 SORTABLE = {
     "mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession",
+    "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein",
     "n_observations", "n_datasets", "best_saap_pep", "max_positional_probability",
     "max_evidence_fragments",
 }
@@ -58,6 +59,9 @@ def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, digest=None, spec
             SAAP.source_gene.ilike(like),
             SAAP.ref_proteins.ilike(like),
             SAAP.source_accession.ilike(like),
+            SAAP.ensembl_gene.ilike(like),
+            SAAP.ensembl_transcript.ilike(like),
+            SAAP.ensembl_protein.ilike(like),
         ))
 
     def _obs_exists(col, value):
@@ -106,6 +110,13 @@ def _row_to_dict(row) -> dict:
         "source_accession": saap.source_accession,
         "source_gene": saap.source_gene,
         "ref_proteins": saap.ref_proteins,
+        "ensembl_gene": saap.ensembl_gene,
+        "ensembl_transcript": saap.ensembl_transcript,
+        "ensembl_protein": saap.ensembl_protein,
+        "position_in_protein": saap.position_in_protein,
+        "positions_all": saap.positions_all,
+        "n_positions": saap.n_positions,
+        "protein_description": saap.protein_description,
         "immunoglobulin": saap.immunoglobulin,
         "trypsin": saap.trypsin,
         "missed_cleavage": saap.missed_cleavage,
@@ -133,7 +144,8 @@ def list_saap(db: Session, *, sort="n_observations", order="desc", page=1, page_
 
     if sort not in SORTABLE:
         sort = "n_observations"
-    if sort in {"mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession"}:
+    if sort in {"mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession",
+                "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein"}:
         sort_col = getattr(SAAP, sort)
     else:
         sort_col = agg.c[sort]
@@ -203,8 +215,9 @@ def _pair_row(saap: SAAP) -> dict:
         "bp": saap.bp_seq,
         "substitution": saap.aa_sub,
         "swap": _swap_notation(saap.aa_sub, saap.bp_seq, saap.mtp_seq),
-        "position_in_protein": saap.position_in_protein,
-        "peptide_start": saap.peptide_start,
+        "position_in_protein": saap.positions_all or saap.position_in_protein,
+        "peptide_start": saap.peptide_starts_all or saap.peptide_start,
+        "n_positions": saap.n_positions,
         "ensembl_gene": saap.ensembl_gene,
         "ensembl_transcript": saap.ensembl_transcript,
         "ensembl_protein": saap.ensembl_protein,

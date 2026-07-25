@@ -1,9 +1,11 @@
-"""SQLite database engine and session management.
+"""
+SQLite database engine and session management
 
 The database path is configurable via the SAAP_DB_PATH environment variable so a
 shared/lab deployment can point every instance at one file (e.g. on a network
 share or server volume). WAL mode is enabled for better concurrent read/write.
 """
+
 import os
 from pathlib import Path
 

@@ -1,4 +1,5 @@
-"""ORM models.
+"""
+ORM models
 
 A SAAP (single amino-acid polymorphism / substituted peptide) is the de-dup
 grain: one row per unique (mtp_seq, bp_seq, aa_sub). Every line in an imported
@@ -6,13 +7,11 @@ file becomes an Observation linked to its SAAP, carrying the per-dataset metrics
 "N datasets" is not stored from the file — it is computed as the number of
 distinct datasets the SAAP appears in.
 """
+
 from __future__ import annotations
-
 from typing import Optional
-
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from .database import Base
 
 
@@ -58,9 +57,15 @@ class SAAP(Base):
     protein_sequence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # 1-based index of the substituted residue within the full protein, and the
     # 1-based offset of the peptide's first residue. Both derived by locating
-    # bp_seq in the canonical protein sequence.
+    # bp_seq in the canonical protein sequence. When the peptide occurs more
+    # than once these hold the FIRST occurrence, and the *_all columns list
+    # every occurrence as a comma-separated string.
     position_in_protein: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
     peptide_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    positions_all: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    peptide_starts_all: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # How many times bp_seq occurs in the protein (1 for the normal case).
+    n_positions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Provenance for the annotation: e.g. "file", "uniprot", or "uniprot:unmatched".
     annotation_source: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 

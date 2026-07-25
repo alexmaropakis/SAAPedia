@@ -1,12 +1,13 @@
-"""Tolerant file-header -> canonical field mapping.
+"""
+Tolerant file-header -> canonical field mapping.
 
 Headers are normalized (lowercased, non-alphanumerics stripped) before matching,
 so "SAAP", "AAS", "TMT/Tissue", "Positional Probability", "UniProt" etc. map
 regardless of case/spacing/punctuation. Both the current and older header
 spellings are accepted. Add new aliases to ALIASES as source formats vary.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import re
 
 # canonical field -> set of accepted normalized aliases

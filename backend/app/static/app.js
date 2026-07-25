@@ -121,6 +121,25 @@ function useToast() {
 }
 
 /* ------------------------------- Columns -------------------------------- */
+const THEMES = [
+  ["auto", "Auto"],
+  ["retro", "Retro"],
+  ["terminal", "Terminal"],
+  ["minimal", "Minimalist"],
+];
+
+// Applied to <html> as data-theme; "auto" removes the attribute so the
+// stylesheet's light default and prefers-color-scheme dark block take over.
+function applyTheme(name) {
+  if (!name || name === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", name);
+  try { localStorage.setItem("saapedia-theme", name); } catch (e) { /* private mode */ }
+}
+
+function initialTheme() {
+  try { return localStorage.getItem("saapedia-theme") || "auto"; } catch (e) { return "auto"; }
+}
+
 const COLUMNS = [
   { key: "mtp_seq", label: "SAAP", sortable: true, cls: "seq", w: 170 },
   { key: "bp_seq", label: "Base peptide", sortable: true, cls: "seq", w: 170 },
@@ -128,6 +147,8 @@ const COLUMNS = [
   { key: "source_gene", label: "Genes", sortable: true, w: 120 },
   { key: "ref_proteins", label: "RefProteins", sortable: true, w: 200 },
   { key: "source_accession", label: "UniProt", sortable: true, w: 110 },
+  { key: "ensembl_gene", label: "Ensembl gene", sortable: true, w: 150 },
+  { key: "position_in_protein", label: "Pos", sortable: true, cls: "num", w: 96 },
   { key: "species", label: "Species", w: 130 },
   { key: "n_datasets", label: "Datasets", sortable: true, w: 170 },
   { key: "digests", label: "Digest", w: 140 },
@@ -154,6 +175,16 @@ function renderCell(col, row, ctx) {
       return <span className="link" onClick={() => ctx.openDetail(row.id)}>{row.mtp_seq}</span>;
     case "aa_sub":
       return <span className="sub-chip">{row.aa_sub || "—"}</span>;
+    case "position_in_protein": {
+      // A peptide repeating in its protein has several candidate sites.
+      if (row.positions_all) {
+        const parts = row.positions_all.split(",");
+        return parts.length > 1
+          ? <span title={`${parts.length} occurrences of this peptide`}>{row.positions_all}</span>
+          : row.positions_all;
+      }
+      return row.position_in_protein ?? "—";
+    }
     case "n_datasets":
       if (!row.datasets.length) return "—";
       return row.datasets.map((d) => {
@@ -204,7 +235,11 @@ function TriState({ label, value, onChange }) {
 /* --------------------------------- App ---------------------------------- */
 function App() {
   const [tab, setTab] = useState("browse");
+  const [theme, setTheme] = useState(initialTheme);
   const [stats, setStats] = useState(null);
+
+  // Re-apply on mount so a stored choice survives a reload.
+  useEffect(() => { applyTheme(theme); }, [theme]);
   const [datasets, setDatasets] = useState([]);
   const [facets, setFacets] = useState({ datasets: [], digests: [], species: [], acquisition_types: [], aa_subs: [] });
   const [toastNode, showToast] = useToast();
@@ -247,6 +282,10 @@ function App() {
           <div className="stat"><div className="num">{stats ? stats.n_observations : "—"}</div><div className="lbl">Observations</div></div>
           <div className="stat"><div className="num">{stats ? stats.n_datasets : "—"}</div><div className="lbl">Datasets</div></div>
           <div className="stat"><div className="num">{stats ? stats.n_genes : "—"}</div><div className="lbl">Genes</div></div>
+          <select className="theme-select" value={theme} aria-label="Theme"
+                  onChange={(e) => setTheme(e.target.value)}>
+            {THEMES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
         </div>
       </header>
 
@@ -361,11 +400,18 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
       const payload = selected.size > 0 ? { ids: Array.from(selected) } : {};
       const res = await api.annotate(payload);
       const bits = [`Annotated ${res.positioned}/${res.requested} with a position`];
+      if (res.resolved_by_gene) bits.push(`${res.resolved_by_gene} via gene`);
+      if (res.resolved_by_peptide) bits.push(`${res.resolved_by_peptide} via peptide match`);
+      if (res.species_corrected) bits.push(`${res.species_corrected} species-corrected`);
+      if (res.aas_filled) bits.push(`${res.aas_filled} AAS filled`);
+      if (res.merged_duplicates) bits.push(`${res.merged_duplicates} duplicates merged`);
       if (res.not_found) bits.push(`${res.not_found} not found`);
       if (res.unmatched_peptide) bits.push(`${res.unmatched_peptide} peptide unmatched`);
       if (res.failed) bits.push(`${res.failed} failed`);
       showToast(bits.join(" · "), Boolean(res.failed && !res.positioned));
       if (res.errors && res.errors.length) console.warn("Annotation errors:", res.errors);
+      if (res.unmatched_examples && res.unmatched_examples.length)
+        console.warn("Peptides not found in their protein sequence:", res.unmatched_examples);
       load();
     } catch (e) {
       showToast(e.message, true);
@@ -392,7 +438,7 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
         <div className="filters">
           <div className="field">
             <label>Search</label>
-            <input type="search" placeholder="peptide, gene, protein, UniProt"
+            <input type="search" placeholder="peptide, gene, protein, UniProt, Ensembl"
                    value={filters.q} onChange={(e) => setFilter("q", e.target.value)} />
           </div>
           <Facet label="Dataset" value={filters.dataset} opts={facets.datasets} onChange={(v) => setFilter("dataset", v)} />
@@ -422,8 +468,8 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
           <button className="danger" disabled={selected.size === 0} onClick={deleteSelected}>Delete selected</button>
           <button className="ghost" disabled={selected.size === 0} onClick={() => setShowExport({ mode: "selected" })}>Export selected</button>
           <button className="ghost" disabled={annotating || data.total === 0} onClick={runAnnotate}
-                  title="Resolve Ensembl IDs and substitution positions from UniProt">
-            {annotating ? "Annotating…" : selected.size > 0 ? `Annotate selected (${selected.size})` : "Annotate all"}
+                  title="Look up gene, protein, UniProt and Ensembl details, and the substitution position">
+            {annotating ? "Annotating…" : selected.size > 0 ? `Annotate selected (${selected.size})` : "Refresh all annotations"}
           </button>
           <button disabled={data.total === 0} onClick={() => setShowExport({ mode: "filtered" })}>
             Export {activeFilters ? "filtered " : "all "}({data.total})
@@ -498,7 +544,7 @@ function ImportTab({ onIngested, showToast }) {
 
   return (
     <div className="card">
-      <h2>Import CSV</h2>
+      <h2>Import data</h2>
       <div className="desc full">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in. Attach source-paper DOIs to datasets later under the Datasets tab.</div>
       <div className={"drop" + (drag ? " drag" : "")}
            onClick={() => inputRef.current.click()}
@@ -517,7 +563,7 @@ function ImportTab({ onIngested, showToast }) {
             <span className="mini">new SAAP <b>{result.saap_created}</b></span>
             <span className="mini">observations <b>{result.observations_created}</b></span>
             <span className="mini">duplicates skipped <b>{result.duplicate_observations_skipped}</b></span>
-            {result.saap_removed_no_uniprot > 0 && <span className="mini warn">removed (no UniProt ID) <b>{result.saap_removed_no_uniprot}</b></span>}
+            {result.saap_pending_uniprot > 0 && <span className="mini warn" title="Kept — click Annotate to resolve these from their gene symbol">awaiting UniProt ID <b>{result.saap_pending_uniprot}</b></span>}
           </div>
           {result.columns_unmapped && result.columns_unmapped.length > 0 &&
             <div className="badge-row"><span className="mini warn">unmapped columns: {result.columns_unmapped.join(", ")}</span></div>}
@@ -624,11 +670,17 @@ function DetailDrawer({ id, datasetUrl, onClose }) {
               <div className="k">Genes</div><div className="v">{data.saap.source_gene || "—"}</div>
               <div className="k">RefProteins</div><div className="v">{data.saap.ref_proteins || "—"}</div>
               <div className="k">UniProt</div><div className="v">{data.saap.source_accession || "—"}</div>
-              <div className="k">Immunoglobulin</div><div className="v">{String(data.saap.immunoglobulin)}</div>
-              <div className="k">Trypsin</div><div className="v">{String(data.saap.trypsin)}</div>
-              <div className="k">Missed cleavage</div><div className="v">{String(data.saap.missed_cleavage)}</div>
-              <div className="k">AAS at terminus</div><div className="v">{String(data.saap.aas_at_peptide_terminus)}</div>
-              <div className="k">Greater than shared</div><div className="v">{String(data.saap.greater_than_shared)}</div>
+              <div className="k">Ensembl gene</div><div className="v">{data.saap.ensembl_gene || "—"}</div>
+              <div className="k">Ensembl transcript</div><div className="v">{data.saap.ensembl_transcript || "—"}</div>
+              <div className="k">Ensembl protein</div><div className="v">{data.saap.ensembl_protein || "—"}</div>
+              <div className="k">Position in protein</div><div className="v">{data.saap.positions_all || data.saap.position_in_protein || "—"}{data.saap.n_positions > 1 ? ` (${data.saap.n_positions} sites)` : ""}</div>
+              <div className="k">Protein length</div><div className="v">{data.saap.protein_length ?? "—"}</div>
+              <div className="k">Annotation source</div><div className="v">{data.saap.annotation_source || "—"}</div>
+              <div className="k">Immunoglobulin</div><div className="v">{fmt.bool(data.saap.immunoglobulin)}</div>
+              <div className="k">Trypsin</div><div className="v">{fmt.bool(data.saap.trypsin)}</div>
+              <div className="k">Missed cleavage</div><div className="v">{fmt.bool(data.saap.missed_cleavage)}</div>
+              <div className="k">AAS at terminus</div><div className="v">{fmt.bool(data.saap.aas_at_peptide_terminus)}</div>
+              <div className="k">Greater than shared</div><div className="v">{fmt.bool(data.saap.greater_than_shared)}</div>
             </div>
             <h2 style={{ margin: "18px 0 10px" }}>{data.observations.length} observations</h2>
             <div className="table-wrap">
@@ -718,7 +770,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
           ? `saap_proteins_${total}.fasta` : `saap_variants_${total}.fasta`);
         showToast(
           `Exported ${total} SAAP as ${entryMode === "protein" ? "full-length proteins" : "peptides"}` +
-          (skipped ? ` · ${skipped} skipped (not annotated)` : ""),
+          (skipped ? ` · ${skipped} skipped (no gene or wrong species)` : ""),
           skipped > 0 && skipped >= total);
       }
       onClose();
@@ -742,7 +794,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
           <p className="hint">
             One row per SAAP-BP pair: the swap in <code>BP&gt;SAAP</code> form plus Ensembl
             gene/transcript/protein IDs, position in protein, gene, accession and
-            description. Run <strong>Annotate</strong> first to fill the Ensembl columns.
+            description. Run <strong>Refresh all annotations</strong> first to fill these in.
           </p>
         ) : null}
         {format === "fasta" ? (
@@ -757,7 +809,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
               </div>
               <p className="hint">
                 {entryMode === "protein"
-                  ? "Each SAAP is written as its complete reference protein with the substitution applied in place, plus the unmodified reference once per accession. Use this for multi-digest searches — the variant site stays reachable by whatever peptides each protease generates. Requires Annotate to have been run."
+                  ? "Each SAAP is written as its complete protein sequence with the substitution applied in place — substituted proteins only. Add your reference proteome separately (below, or concatenate afterwards) for the unmodified sequences. Use this for multi-digest searches: the variant site stays reachable by whatever peptides each protease generates. Requires Annotate to have been run."
                   : "Each SAAP is written as the substituted peptide sequence only. Suitable when searching the same protease the SAAPs were observed with."}
               </p>
             </div>

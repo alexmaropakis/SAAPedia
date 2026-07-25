@@ -1,10 +1,8 @@
-"""Pydantic request/response models."""
+# Pydantic request/response models
+
 from __future__ import annotations
-
 from typing import Optional
-
 from pydantic import BaseModel
-
 
 class ExportRequest(BaseModel):
     # Provide either explicit SAAP ids, or a filter block to export everything
