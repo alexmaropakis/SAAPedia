@@ -1,17 +1,14 @@
-# SAAPedia: An interactive local database for **substituted amino acid peptide (SAAP)** sequences derived using mass spectrometry proteomics-based methods.
+# SAAPedia
 
-Import a **CSV, TSV, or Excel (.xlsx)** file; SAAPedia de-duplicates and normalizes it, then lets you
-browse, filter, and sort the results, attach source-paper DOIs to datasets, and export any selection
-as a **UniProt-style FASTA** of the SAAPs.
+SAAPedia is an interactive local database for substituted amino acid peptide (SAAP) sequences derived from mass spectrometry proteomics data. 
 
-Everyone runs their own copy locally — download the repo, start it, open a browser. The repo ships
-with a populated `saap.db` from [Tsour et al., Nature 2026](https://www.nature.com/articles/s41586-026-10678-2) and our other research at the Slavov Lab, so there's data to explore right away.
+After importing a .csv, .tsv, or .xlsx file containing SAAP-base peptide (BP) pairs and related information, SAAPedia de-duplicates and allows you to browse, filter, and sort the results, attach source-paper DOIs to datasets, and export any selection as UniProt-style FASTA files. 
+
+Each copy is run locally on the terminal after downloading this repository. The repo ships with a poopulated `saap.db`. 
 
 - **Backend:** FastAPI + SQLite
 - **Frontend:** React
 - **Requirement:** Python 3.9+
-
-Find a short introduction to SAAPedia [here](https://docs.google.com/presentation/d/1ZOMBIVukzxbd0Y72HJP_PKo2ZN0wGaXiokHkLZKiyy4/edit?usp=sharing).
 
 ---
 
@@ -76,7 +73,7 @@ AAS_at_peptide_terminus, greater_than_shared, Immunoglobulin, Trypsin`. Add new 
 A major utility of SAAPedia is the ability to export all or a select number of SAAP sequences into a MaxQuant, FragPipe, or other quantitative proteomics engine-compatible UniProt-style FASTA.
 
 Options:
-1. Export SAAP sequences alone as their own FASTA
+1. Export SAAP sequences (peptide or substitution in whole protein) alone as their own FASTA
 2. Export SAAP sequences appended to a reference proteome (uploaded from local desktop)
 3. Export SAAP sequences only with reverse decoys
 4. Export an entire FASTA containing reference proteome and SAAP sequences with all reverse decoys appended 
