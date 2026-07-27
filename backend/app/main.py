@@ -385,7 +385,7 @@ def _clean_filters(filters: dict) -> dict:
 
 # Bumped when backend behaviour changes, so you can confirm which build is
 # actually running (GET /api/health) without inspecting the UI.
-BUILD = "2026.07-saap-species-rule"
+BUILD = "2026.07-saap-cleanup-annot"
 
 
 @app.get("/api/health")

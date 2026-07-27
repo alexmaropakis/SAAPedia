@@ -121,25 +121,6 @@ function useToast() {
 }
 
 /* ------------------------------- Columns -------------------------------- */
-const THEMES = [
-  ["auto", "Auto"],
-  ["retro", "Retro"],
-  ["terminal", "Terminal"],
-  ["minimal", "Minimalist"],
-];
-
-// Applied to <html> as data-theme; "auto" removes the attribute so the
-// stylesheet's light default and prefers-color-scheme dark block take over.
-function applyTheme(name) {
-  if (!name || name === "auto") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", name);
-  try { localStorage.setItem("saapedia-theme", name); } catch (e) { /* private mode */ }
-}
-
-function initialTheme() {
-  try { return localStorage.getItem("saapedia-theme") || "auto"; } catch (e) { return "auto"; }
-}
-
 const COLUMNS = [
   { key: "mtp_seq", label: "SAAP", sortable: true, cls: "seq", w: 170 },
   { key: "bp_seq", label: "Base peptide", sortable: true, cls: "seq", w: 170 },
@@ -235,11 +216,9 @@ function TriState({ label, value, onChange }) {
 /* --------------------------------- App ---------------------------------- */
 function App() {
   const [tab, setTab] = useState("browse");
-  const [theme, setTheme] = useState(initialTheme);
   const [stats, setStats] = useState(null);
 
   // Re-apply on mount so a stored choice survives a reload.
-  useEffect(() => { applyTheme(theme); }, [theme]);
   const [datasets, setDatasets] = useState([]);
   const [facets, setFacets] = useState({ datasets: [], digests: [], species: [], acquisition_types: [], aa_subs: [] });
   const [toastNode, showToast] = useToast();
@@ -282,10 +261,6 @@ function App() {
           <div className="stat"><div className="num">{stats ? stats.n_observations : "—"}</div><div className="lbl">Observations</div></div>
           <div className="stat"><div className="num">{stats ? stats.n_datasets : "—"}</div><div className="lbl">Datasets</div></div>
           <div className="stat"><div className="num">{stats ? stats.n_genes : "—"}</div><div className="lbl">Genes</div></div>
-          <select className="theme-select" value={theme} aria-label="Theme"
-                  onChange={(e) => setTheme(e.target.value)}>
-            {THEMES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
         </div>
       </header>
 
@@ -402,12 +377,13 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
       const bits = [`Annotated ${res.positioned}/${res.requested} with a position`];
       if (res.resolved_by_gene) bits.push(`${res.resolved_by_gene} via gene`);
       if (res.resolved_by_peptide) bits.push(`${res.resolved_by_peptide} via peptide match`);
+      if (res.resolved_by_sequence) bits.push(`${res.resolved_by_sequence} via peptide search`);
       if (res.species_corrected) bits.push(`${res.species_corrected} species-corrected`);
       if (res.aas_filled) bits.push(`${res.aas_filled} AAS filled`);
       if (res.merged_duplicates) bits.push(`${res.merged_duplicates} duplicates merged`);
       if (res.not_found) bits.push(`${res.not_found} not found`);
       if (res.unmatched_peptide) bits.push(`${res.unmatched_peptide} peptide unmatched`);
-      if (res.failed) bits.push(`${res.failed} failed`);
+      if (res.failed) bits.push(`${res.failed} failed (service error — retry)`);
       showToast(bits.join(" · "), Boolean(res.failed && !res.positioned));
       if (res.errors && res.errors.length) console.warn("Annotation errors:", res.errors);
       if (res.unmatched_examples && res.unmatched_examples.length)
@@ -725,6 +701,8 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
   const [basePeptides, setBasePeptides] = useState(false);
   const [entryMode, setEntryMode] = useState("peptide");
   const [refFile, setRefFile] = useState(null);
+  const [refDrag, setRefDrag] = useState(false);
+  const refInputRef = useRef();
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [baseTemplate, setBaseTemplate] = useState(DEFAULT_BASE_TEMPLATE);
   const [busy, setBusy] = useState(false);
@@ -815,8 +793,23 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
             </div>
             <div className="field">
               <label>Reference proteome FASTA (optional)</label>
-              <input type="file" accept=".fasta,.fa,.faa,.txt"
-                     onChange={(e) => setRefFile(e.target.files[0] || null)} />
+              <div className={"drop drop-compact" + (refDrag ? " drag" : "")}
+                   onClick={() => refInputRef.current.click()}
+                   onDragOver={(e) => { e.preventDefault(); setRefDrag(true); }}
+                   onDragLeave={() => setRefDrag(false)}
+                   onDrop={(e) => { e.preventDefault(); setRefDrag(false); setRefFile((e.dataTransfer.files && e.dataTransfer.files[0]) || null); }}>
+                {refFile
+                  ? <span><strong>{refFile.name}</strong> — click or drop to replace</span>
+                  : <span><strong>Drop a .fasta here</strong> or click to browse</span>}
+                <input ref={refInputRef} type="file" accept=".fasta,.fa,.faa,.txt" hidden
+                       onChange={(e) => setRefFile(e.target.files[0] || null)} />
+              </div>
+              {refFile && (
+                <button type="button" className="linklike"
+                        onClick={() => { setRefFile(null); if (refInputRef.current) refInputRef.current.value = ""; }}>
+                  Clear file
+                </button>
+              )}
             </div>
             <div className="field">
               <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer" }}>

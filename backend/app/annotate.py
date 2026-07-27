@@ -1180,7 +1180,9 @@ def annotate_saaps(
     # Last resort: search UniProt by the peptide sequence itself.
     if by_peptide:
         seq_records: dict[tuple[str, str | None], ProteinRecord] = {}
-        seq_errors: list[str] = []
+        # Track which organism batches actually errored, so a single failed
+        # peptide doesn't get every other peptide marked as "failed".
+        errored_orgs: set[str | None] = set()
         by_org: dict[str | None, list[str]] = {}
         for (pep, organism) in by_peptide:
             by_org.setdefault(organism, []).append(pep)
@@ -1190,17 +1192,23 @@ def annotate_saaps(
             )
             for pep, rec in recs.items():
                 seq_records[(pep, organism)] = rec
-            seq_errors.extend(errs)
-        result.errors.extend(seq_errors)
+            if errs:
+                errored_orgs.add(organism)
+            result.errors.extend(errs)
         for key, group in by_peptide.items():
             rec = seq_records.get(key)
             if rec is None:
-                if seq_errors:
+                # Distinguish a real "no match" from a service/network failure,
+                # and ALWAYS write a marker so the row never stays unattempted
+                # (annotation_source is how the UI reports what happened).
+                if key[1] in errored_orgs:
                     result.failed += len(group)
+                    for s in group:
+                        s.annotation_source = "uniprot:peptide-error"
                 else:
                     result.not_found += len(group)
                     for s in group:
-                        s.annotation_source = s.annotation_source or "uniprot:peptide-not-found"
+                        s.annotation_source = "uniprot:peptide-not-found"
                 continue
             for s in group:
                 if rec.accession and not s.source_accession:
