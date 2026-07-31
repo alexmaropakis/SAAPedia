@@ -25,7 +25,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from .models import SAAP
 
@@ -36,6 +36,31 @@ UNIPROT_FIELDS = "accession,id,protein_name,gene_names,length,sequence,xref_ense
 DEFAULT_BATCH_SIZE = 100   # accessions per UniProt search query
 DEFAULT_TIMEOUT = 30       # seconds per HTTP request
 DEFAULT_PAUSE = 0.2        # polite delay between batches
+
+# A SAAP still needs annotation if a field is blank *and* it hasn't already
+# received a definitive answer. `annotation_source` records that verdict, e.g.
+# "uniprot" (resolved — an entry with no Ensembl cross-reference still leaves
+# ensembl_gene blank forever) or "uniprot:not-found" (accession doesn't
+# exist): retrying either changes nothing, so both count as done. Only a
+# genuinely unattempted row (no source yet), a source ending "-error" (a
+# network/service failure, not a verdict), or "peptide-match" (an
+# intermediate state `resolve_from_database` left mid-pipeline) are worth
+# retrying. Shared between `annotate_saaps` (to skip settled rows) and
+# `crud.annotation_status` (to report how many still don't), so the "N new"
+# count shown in the UI always matches what an "annotate new" run will touch.
+NEEDS_ANNOTATION = and_(
+    or_(SAAP.ensembl_gene.is_(None),
+        SAAP.position_in_protein.is_(None),
+        SAAP.protein_sequence.is_(None),
+        SAAP.source_accession.is_(None),
+        SAAP.source_accession == "",
+        SAAP.aa_sub.is_(None),
+        SAAP.aa_sub == ""),
+    or_(SAAP.annotation_source.is_(None),
+        SAAP.annotation_source == "",
+        SAAP.annotation_source == "peptide-match",
+        SAAP.annotation_source.like("%-error")),
+)
 
 # "V to P" / "V->P" / "V/P" / "V2P" -> ("V", "P")
 _SUB_SPLIT = re.compile(r"\s*(?:to|->|>|/|→|2)\s*", re.IGNORECASE)
@@ -974,7 +999,6 @@ def annotate_saaps(
     db: Session,
     *,
     ids: list[int] | None = None,
-    only_missing: bool = True,
     overwrite: bool = False,
     limit: int | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -983,32 +1007,26 @@ def annotate_saaps(
 ) -> AnnotationResult:
     """Annotate SAAP rows from UniProt.
 
-    ids          — restrict to these SAAP ids (default: all).
-    only_missing — skip rows that already have an Ensembl gene and a position.
-    overwrite    — replace existing values instead of filling blanks only.
-    limit        — cap the number of rows processed (useful for a trial run).
+    ids       — restrict to these SAAP ids (default: every SAAP).
+    overwrite — if True, re-fetch and rewrite every selected row from UniProt
+                even if it is already fully annotated ("re-annotate"). If
+                False (default), rows that are already complete are skipped
+                and only blank fields get filled in on the rest
+                ("annotate new"/"annotate chosen", depending on `ids`).
+    limit     — cap the number of rows processed (useful for a trial run).
 
-    Annotating the whole database (no `ids`) is a full refresh: every SAAP is
-    re-fetched and its gene, protein description, accession and Ensembl fields
-    are rewritten from UniProt, so the whole table ends up in one consistent
-    format rather than a mix of imported and resolved values.
+    The three call shapes a caller actually needs:
+      - re-annotate all:    ids=None,        overwrite=True
+      - annotate new:       ids=None,        overwrite=False
+      - annotate a chosen selection:  ids=[...],  overwrite=False
     """
-    if not ids and only_missing and not overwrite:
-        only_missing = False
-        overwrite = True
-    # Every SAAP is eligible: those without an accession are resolved from their
-    # gene symbol, so import no longer has to discard them.
+    # Every SAAP is eligible: those without an accession are resolved from
+    # their gene symbol, so import no longer has to discard them.
     stmt = select(SAAP)
     if ids:
         stmt = stmt.where(SAAP.id.in_(ids))
-    if only_missing and not overwrite:
-        stmt = stmt.where(or_(SAAP.ensembl_gene.is_(None),
-                              SAAP.position_in_protein.is_(None),
-                              SAAP.protein_sequence.is_(None),
-                              SAAP.source_accession.is_(None),
-                              SAAP.source_accession == "",
-                              SAAP.aa_sub.is_(None),
-                              SAAP.aa_sub == ""))
+    if not overwrite:
+        stmt = stmt.where(NEEDS_ANNOTATION)
     stmt = stmt.order_by(SAAP.id)
     if limit:
         stmt = stmt.limit(limit)

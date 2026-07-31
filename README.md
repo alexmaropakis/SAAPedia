@@ -2,7 +2,7 @@
 
 SAAPedia is an interactive local database for substituted amino acid peptide (SAAP) sequences derived from mass spectrometry proteomics data. 
 
-After importing a .csv, .tsv, or .xlsx file containing SAAP-base peptide (BP) pairs and related information, SAAPedia de-duplicates and allows you to browse, filter, and sort the results, attach source-paper DOIs to datasets, and export any selection as UniProt-style FASTA files. 
+After importing a .csv, .tsv, or .xlsx file containing SAAP-base peptide (BP) pairs and related information, SAAPedia de-duplicates and allows you to browse, filter, and sort the results, and export any selection as UniProt-style FASTA files. 
 
 Each copy is run locally on the terminal after downloading this repository. The repo ships with a poopulated `saap.db`. 
 
@@ -47,7 +47,8 @@ Then open **http://127.0.0.1:8000**.
   flags, thresholds), and sort any column. Click a peptide to see every underlying observation.
   Select rows to **export to FASTA** or **delete** or export everything matching the current filter.
 - **Import** — drop a CSV, TSV, or Excel file.
-- **Datasets** — view each dataset with counts, edit Dataset to DOI mappings, open the linked paper, or clear all data.
+- **Datasets** — a summary view of the whole database: trends across substitutions, species, digest and
+  acquisition type, plus a per-dataset breakdown (SAAP, observations, annotation coverage), or clear all data.
 
 ### What counts as one SAAP?
 
@@ -59,7 +60,8 @@ duplicate rows are detected and not double-counted.
 
 ### Import rules
 
-- A peptide is **dropped** if it has no **UniProt** accession.
+- A peptide with no **UniProt** accession is kept, not dropped — run **Annotate** afterward to
+  resolve it from its gene symbol (or, failing that, its base peptide sequence).
 - Columns are matched tolerantly (case / spacing / punctuation-insensitive). The import summary
   reports any **unmapped** columns, so nothing is silently mis-read.
 

@@ -13,15 +13,14 @@ def normalize_dataset(name: str | None) -> str | None:
     return cleaned[0].upper() + cleaned[1:]
 
 
-def doi_to_url(doi: str | None) -> str | None:
-    # Function to turn raw DOI/URL into a resolvable https
-    if not doi:
+def normalize_species(name: str | None) -> str | None:
+    # Normalize casing to the standard binomial form, e.g. "homo sapiens" /
+    # "HOMO SAPIENS" / "Homo Sapiens" all become "Homo sapiens", so the same
+    # species is never split into separate facet/filter values by casing alone.
+    if name is None:
         return None
-    d = doi.strip()
-    if not d:
+    cleaned = str(name).strip()
+    if not cleaned:
         return None
-    if d.lower().startswith(("http://", "https://")):
-        return d
-    if d.lower().startswith("doi:"):
-        d = d[4:].strip()
-    return f"https://doi.org/{d}"
+    lowered = cleaned.lower()
+    return lowered[0].upper() + lowered[1:]

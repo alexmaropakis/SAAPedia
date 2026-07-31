@@ -33,24 +33,12 @@ def _startup():
 
 # API: ingestion
 @app.post("/api/upload")
-async def upload(
-    file: UploadFile = File(...),
-    dataset_doi_map: str | None = Form(None),
-    db: Session = Depends(get_db),
-):
+async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename or not file.filename.lower().endswith((".csv", ".tsv", ".txt", ".xlsx")):
         raise HTTPException(400, "Please upload a .csv, .tsv, or .xlsx file.")
-    doi_map = None
-    if dataset_doi_map:
-        try:
-            parsed = json.loads(dataset_doi_map)
-            if isinstance(parsed, dict):
-                doi_map = {str(k): str(v) for k, v in parsed.items()}
-        except json.JSONDecodeError:
-            raise HTTPException(400, "dataset_doi_map must be valid JSON.")
     raw = await file.read()
     try:
-        result = ingest_file(db, raw, file.filename, dataset_doi_map=doi_map)
+        result = ingest_file(db, raw, file.filename)
     except Exception as exc:  # surface parse errors to the UI
         raise HTTPException(400, f"Failed to ingest CSV: {exc}") from exc
     return result.as_dict()
@@ -58,16 +46,7 @@ async def upload(
 
 @app.get("/api/datasets")
 def datasets(db: Session = Depends(get_db)):
-    return crud.list_datasets(db)
-
-
-@app.post("/api/datasets")
-def save_dataset_dois(payload: dict, db: Session = Depends(get_db)):
-    mapping = payload.get("map") if isinstance(payload, dict) else None
-    if not isinstance(mapping, dict):
-        raise HTTPException(400, "Expected {\"map\": {dataset: doi}}.")
-    saved = crud.upsert_dataset_dois(db, mapping)
-    return {"saved": saved}
+    return crud.dataset_overview(db)
 
 
 @app.post("/api/saap/delete")
@@ -346,8 +325,7 @@ def annotate(req: AnnotateRequest, db: Session = Depends(get_db)):
     position from UniProt. Requires outbound network access; failures are
     reported in the response rather than raised."""
     result = annotate_mod.annotate_saaps(
-        db, ids=req.ids, only_missing=req.only_missing,
-        overwrite=req.overwrite, limit=req.limit,
+        db, ids=req.ids, overwrite=req.overwrite, limit=req.limit,
     )
     return result.as_dict()
 

@@ -23,8 +23,12 @@ class ExportRequest(BaseModel):
 
 
 class AnnotateRequest(BaseModel):
-    """Resolve Ensembl IDs and substitution positions from UniProt."""
+    """Resolve Ensembl IDs and substitution positions from UniProt.
+
+    ids=None,  overwrite=True   -> re-annotate all
+    ids=None,  overwrite=False  -> annotate new (skip already-complete rows)
+    ids=[...], overwrite=False  -> annotate chosen (same, scoped to a selection)
+    """
     ids: Optional[list[int]] = None   # restrict to these SAAP (default: all)
-    only_missing: bool = True         # skip rows already annotated
-    overwrite: bool = False           # replace existing values
+    overwrite: bool = False           # rewrite rows even if already complete
     limit: Optional[int] = None       # cap rows processed (trial runs)

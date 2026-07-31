@@ -9,8 +9,8 @@ from sqlalchemy import delete as sa_delete, func
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from . import column_map
-from .models import DatasetInfo, Observation, SAAP
-from .util import normalize_dataset
+from .models import Observation, SAAP
+from .util import normalize_dataset, normalize_species
 
 # String value -> bool for flag columns.
 _TRUE = {"yes", "true", "1", "y", "t"}
@@ -27,7 +27,6 @@ class IngestResult:
     rows_skipped_no_identity: int = 0
     columns_mapped: dict[str, str] = field(default_factory=dict)
     columns_unmapped: list[str] = field(default_factory=list)
-    dataset_dois_saved: int = 0
     saap_pending_uniprot: int = 0
 
     def as_dict(self) -> dict:
@@ -213,7 +212,6 @@ def ingest_file(
     db: Session,
     raw_bytes: bytes,
     filename: str,
-    dataset_doi_map: dict[str, str] | None = None,
 ) -> IngestResult:
     headers, raw_rows = _parse_file(raw_bytes, filename)
 
@@ -223,11 +221,6 @@ def ingest_file(
         columns_mapped=mapping,
         columns_unmapped=unmapped,
     )
-
-    # Function to ingest saap maps 
-
-    if dataset_doi_map:
-        result.dataset_dois_saved = upsert_dataset_dois(db, dataset_doi_map)
 
     # Cache SAAP identities already seen in this ingest to avoid extra queries
     # Collapses in-file duplicates 
@@ -306,7 +299,7 @@ def ingest_file(
               dataset=normalize_dataset(_clean_str(record.get("dataset"))),
               tmt_tissue=_clean_str(record.get("tmt_tissue")),
               digest=_clean_str(record.get("digest")),
-              species=_clean_str(record.get("species")),
+              species=normalize_species(_clean_str(record.get("species"))),
               acquisition_type=_clean_str(record.get("acquisition_type")),
               saap_pep=_to_float(record.get("saap_pep")),
               positional_probability=_to_float(record.get("positional_probability")),
@@ -347,26 +340,6 @@ def cleanup_saap_without_uniprot(db: Session) -> int:
     db.execute(sa_delete(SAAP).where(SAAP.id.in_(victim_list)))
     db.commit()
     return len(victim_list)
-
-
-def upsert_dataset_dois(db: Session, dataset_doi_map: dict[str, str]) -> int:
-    # Function to insert or update dataset -> DOI rows. Blank names are ignored; a blank
-    # DOI clears any existing one. Returns the number of datasets written.
-
-    saved = 0
-    for name, doi in dataset_doi_map.items():
-        name = normalize_dataset(name) or ""
-        if not name:
-            continue
-        doi = (doi or "").strip() or None
-        existing = db.scalar(select(DatasetInfo).where(DatasetInfo.name == name))
-        if existing is None:
-            db.add(DatasetInfo(name=name, doi=doi))
-        else:
-            existing.doi = doi
-        saved += 1
-    db.commit()
-    return saved
 
 
 def _backfill_source(saap: SAAP, record: dict) -> None:

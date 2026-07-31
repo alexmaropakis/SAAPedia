@@ -4,7 +4,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 const api = {
   async stats() { return (await fetch("/api/stats")).json(); },
   async facets() { return (await fetch("/api/facets")).json(); },
-  async datasets() { return (await fetch("/api/datasets")).json(); },
+  async datasetOverview() { return (await fetch("/api/datasets")).json(); },
   async list(params) {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -15,22 +15,13 @@ const api = {
     return r.json();
   },
   async detail(id) { return (await fetch("/api/saap/" + id)).json(); },
-  async upload(file, doiMap) {
+  async upload(file) {
     const fd = new FormData();
     fd.append("file", file);
-    if (doiMap && Object.keys(doiMap).length) fd.append("dataset_doi_map", JSON.stringify(doiMap));
     const r = await fetch("/api/upload", { method: "POST", body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || "Upload failed");
     return body;
-  },
-  async saveDatasetDois(map) {
-    const r = await fetch("/api/datasets", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ map }),
-    });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "Failed to save DOIs");
-    return r.json();
   },
   async deleteSaap(payload) {
     const r = await fetch("/api/saap/delete", {
@@ -166,14 +157,7 @@ function renderCell(col, row, ctx) {
       }
       return row.position_in_protein ?? "—";
     }
-    case "n_datasets":
-      if (!row.datasets.length) return "—";
-      return row.datasets.map((d) => {
-        const url = ctx.datasetUrl[d];
-        return url
-          ? <a key={d} className="ds-chip linked" href={url} target="_blank" rel="noreferrer">{d}</a>
-          : <span key={d} className="ds-chip">{d}</span>;
-      });
+    case "n_datasets": return chips(row.datasets, "ds-chip");
     case "digests": return chips(row.digests, "sub-chip");
     case "species": return chips(row.species, "sub-chip");
     case "acquisition_types": return chips(row.acquisition_types, "sub-chip");
@@ -217,41 +201,32 @@ function TriState({ label, value, onChange }) {
 function App() {
   const [tab, setTab] = useState("browse");
   const [stats, setStats] = useState(null);
-
-  // Re-apply on mount so a stored choice survives a reload.
-  const [datasets, setDatasets] = useState([]);
   const [facets, setFacets] = useState({ datasets: [], digests: [], species: [], acquisition_types: [], aa_subs: [] });
   const [toastNode, showToast] = useToast();
 
   const refreshMeta = useCallback(() => {
     api.stats().then(setStats).catch(() => {});
     api.facets().then(setFacets).catch(() => {});
-    api.datasets().then(setDatasets).catch(() => {});
   }, []);
   useEffect(() => { refreshMeta(); }, [refreshMeta]);
-
-  const datasetUrl = {};
-  datasets.forEach((d) => { if (d.url) datasetUrl[d.name] = d.url; });
 
   return (
     <div className="app">
       <header className="top">
         <div className="brand">
           <a className="logo-link" href="https://github.com/alexmaropakis/SAAPedia" target="_blank" rel="noopener noreferrer" aria-label="SAAPedia on GitHub">
-          <svg className="logo" viewBox="0 0 64 64" width="62" height="62" aria-hidden="true">
-            {/* mRNA strand (threads through the ribosome; only the ends show) */}
-            <path className="logo-mrna-strand" d="M5 39 H59" stroke="var(--logo-mrna)" strokeWidth="3" strokeLinecap="round" fill="none" />
-            <circle cx="8" cy="39" r="1.8" fill="var(--logo-mrna)" />
-            <circle cx="52" cy="39" r="1.8" fill="var(--logo-mrna)" />
-            {/* large + small subunits */}
-            <ellipse className="logo-large" cx="28" cy="29" rx="17" ry="14" fill="var(--logo-large)" />
-            <ellipse className="logo-small" cx="28" cy="44" rx="13" ry="8.5" fill="var(--logo-small)" />
-            {/* growing polypeptide: backbone + amino-acid beads */}
-            <path d="M38 19 Q48 8 61 13" stroke="var(--logo-mrna)" strokeWidth="2" strokeLinecap="round" fill="none" />
-            <circle className="logo-bead b1" cx="38" cy="19" r="3.5" fill="var(--logo-b1)" />
-            <circle className="logo-bead b2" cx="46" cy="12" r="3.5" fill="var(--logo-b2)" />
-            <circle className="logo-bead b3" cx="54" cy="11" r="3.5" fill="var(--logo-b3)" />
-            <circle className="logo-bead b4" cx="61" cy="13" r="3.5" fill="var(--logo-b4)" />
+          <svg className="logo" viewBox="0 0 64 64" width="40" height="40" aria-hidden="true">
+            {/* One-line ink drawing of a ribosome translating mRNA — a single
+                stroke color throughout, no fills or gradients. */}
+            <path className="logo-mrna" d="M3 41 Q16 38 26 41 T50 41 Q56 41 61 39" />
+            <ellipse className="logo-small" cx="27" cy="42" rx="14" ry="8.5" />
+            <path className="logo-large" d="M14 32 Q13 17 29 14 Q44 13 45 27 Q46 36 34 38 Q20 40 14 32 Z" />
+            {/* nascent polypeptide emerging from the exit tunnel */}
+            <path className="logo-chain" d="M37 18 Q46 9 58 12" />
+            <circle className="logo-res r1" cx="37" cy="18" r="2" />
+            <circle className="logo-res r2" cx="45" cy="11" r="2" />
+            <circle className="logo-res r3" cx="52" cy="9" r="2" />
+            <circle className="logo-res r4" cx="58" cy="12" r="2" />
           </svg>
           </a>
           <h1>SAAPedia</h1>
@@ -271,13 +246,13 @@ function App() {
       </div>
 
       {tab === "browse" && (
-        <BrowseTab facets={facets} datasetUrl={datasetUrl} onDataChanged={refreshMeta} showToast={showToast} />
+        <BrowseTab facets={facets} onDataChanged={refreshMeta} showToast={showToast} />
       )}
       {tab === "import" && (
         <ImportTab onIngested={() => { refreshMeta(); }} showToast={showToast} />
       )}
       {tab === "datasets" && (
-        <DatasetsTab datasets={datasets} onChanged={refreshMeta} showToast={showToast} />
+        <DatasetsTab onChanged={refreshMeta} showToast={showToast} />
       )}
 
       {toastNode}
@@ -286,7 +261,7 @@ function App() {
 }
 
 /* ------------------------------ Browse tab ------------------------------ */
-function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
+function BrowseTab({ facets, onDataChanged, showToast }) {
   const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 50 });
   const [loading, setLoading] = useState(false);
   const EMPTY_FILTERS = {
@@ -301,8 +276,14 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
   const [selected, setSelected] = useState(() => new Set());
   const [detailId, setDetailId] = useState(null);
   const [showExport, setShowExport] = useState(false);
-  const [annotating, setAnnotating] = useState(false);
+  const [annotating, setAnnotating] = useState(null); // null | "new" | "chosen" | "all"
+  const [annoStatus, setAnnoStatus] = useState(null);
   const [colWidths, setColWidths] = useState({});
+
+  const loadAnnoStatus = useCallback(() => {
+    api.annotateStatus().then(setAnnoStatus).catch(() => {});
+  }, []);
+  useEffect(() => { loadAnnoStatus(); }, [loadAnnoStatus]);
 
   const colW = (c) => colWidths[c.key] ?? c.w ?? DEFAULT_COL_W;
   const tableWidth = 40 + COLUMNS.reduce((s, c) => s + colW(c), 0);
@@ -362,19 +343,31 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
       setSelected(new Set());
       onDataChanged();
       load();
+      loadAnnoStatus();
     } catch (e) { showToast(e.message, true); }
   };
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const activeFilters = Object.values(filters).filter((v) => v !== "").length;
-  const ctx = { openDetail: setDetailId, datasetUrl };
+  const ctx = { openDetail: setDetailId };
 
-  const runAnnotate = async () => {
-    setAnnotating(true);
+  // mode: "new" (skip rows already fully annotated), "chosen" (same, scoped to
+  // the current selection), "all" (re-fetch and overwrite every row).
+  const runAnnotate = async (mode) => {
+    if (mode === "all" && !window.confirm(
+      "Re-annotate all SAAP? This re-fetches every row from UniProt and " +
+      "overwrites its existing gene, protein and Ensembl fields, even where " +
+      "already complete — it can take a while for a large database."
+    )) return;
+
+    setAnnotating(mode);
     try {
-      const payload = selected.size > 0 ? { ids: Array.from(selected) } : {};
+      const payload =
+        mode === "all" ? { overwrite: true } :
+        mode === "chosen" ? { ids: Array.from(selected) } :
+        {};
       const res = await api.annotate(payload);
-      const bits = [`Annotated ${res.positioned}/${res.requested} with a position`];
+      const bits = [`${res.positioned}/${res.requested} positioned`];
       if (res.resolved_by_gene) bits.push(`${res.resolved_by_gene} via gene`);
       if (res.resolved_by_peptide) bits.push(`${res.resolved_by_peptide} via peptide match`);
       if (res.resolved_by_sequence) bits.push(`${res.resolved_by_sequence} via peptide search`);
@@ -389,10 +382,12 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
       if (res.unmatched_examples && res.unmatched_examples.length)
         console.warn("Peptides not found in their protein sequence:", res.unmatched_examples);
       load();
+      loadAnnoStatus();
+      onDataChanged();
     } catch (e) {
       showToast(e.message, true);
     } finally {
-      setAnnotating(false);
+      setAnnotating(null);
     }
   };
 
@@ -443,10 +438,27 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
         <div className="btn-group">
           <button className="danger" disabled={selected.size === 0} onClick={deleteSelected}>Delete selected</button>
           <button className="ghost" disabled={selected.size === 0} onClick={() => setShowExport({ mode: "selected" })}>Export selected</button>
-          <button className="ghost" disabled={annotating || data.total === 0} onClick={runAnnotate}
-                  title="Look up gene, protein, UniProt and Ensembl details, and the substitution position">
-            {annotating ? "Annotating…" : selected.size > 0 ? `Annotate selected (${selected.size})` : "Refresh all annotations"}
+          <button className="ghost" disabled={!!annotating || selected.size === 0}
+                  onClick={() => runAnnotate("chosen")}
+                  title="Annotate the selected SAAP, skipping any already fully annotated">
+            {annotating === "chosen" ? "Annotating…" : `Annotate chosen (${selected.size})`}
           </button>
+
+          <span className="btn-divider" />
+
+          <button className="ghost" disabled={!!annotating || (annoStatus ? annoStatus.n_needs_annotation === 0 : data.total === 0)}
+                  onClick={() => runAnnotate("new")}
+                  title="Look up gene, protein, UniProt and Ensembl details for every SAAP that doesn't have them yet">
+            {annotating === "new" ? "Annotating…" : `Annotate new${annoStatus ? ` (${annoStatus.n_needs_annotation})` : ""}`}
+          </button>
+          <button className="ghost" disabled={!!annotating || data.total === 0}
+                  onClick={() => runAnnotate("all")}
+                  title="Re-fetch every SAAP from UniProt, overwriting its annotation even if already complete">
+            {annotating === "all" ? "Annotating…" : "Re-annotate all"}
+          </button>
+
+          <span className="btn-divider" />
+
           <button disabled={data.total === 0} onClick={() => setShowExport({ mode: "filtered" })}>
             Export {activeFilters ? "filtered " : "all "}({data.total})
           </button>
@@ -489,7 +501,7 @@ function BrowseTab({ facets, datasetUrl, onDataChanged, showToast }) {
 
       {pager}
 
-      {detailId && <DetailDrawer id={detailId} datasetUrl={datasetUrl} onClose={() => setDetailId(null)} />}
+      {detailId && <DetailDrawer id={detailId} onClose={() => setDetailId(null)} />}
       {showExport && (
         <ExportModal mode={showExport.mode} selected={selected} filters={filters}
           total={showExport.mode === "filtered" ? data.total : selected.size}
@@ -521,7 +533,7 @@ function ImportTab({ onIngested, showToast }) {
   return (
     <div className="card">
       <h2>Import data</h2>
-      <div className="desc full">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are dropped on import. "N datasets" is computed from the datasets each SAAP appears in. Attach source-paper DOIs to datasets later under the Datasets tab.</div>
+      <div className="desc full">Columns are auto-mapped and de-duplicated. Peptides without a UniProt ID are kept — run Annotate afterward to resolve them from their gene symbol. "N datasets" is computed from the datasets each SAAP appears in.</div>
       <div className={"drop" + (drag ? " drag" : "")}
            onClick={() => inputRef.current.click()}
            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
@@ -550,72 +562,108 @@ function ImportTab({ onIngested, showToast }) {
 }
 
 /* ----------------------------- Datasets tab ----------------------------- */
-function DatasetsTab({ datasets, onChanged, showToast }) {
-  const [edits, setEdits] = useState({});
-  const [saving, setSaving] = useState(false);
+function BarList({ items, unit }) {
+  if (!items || items.length === 0) return <div className="empty small">No data yet.</div>;
+  const max = Math.max(...items.map((i) => i.n), 1);
+  return (
+    <div className="bars">
+      {items.map((i) => (
+        <div className="bar-row" key={i.label}>
+          <div className="bar-label" title={i.label}>{i.label}</div>
+          <div className="bar-track"><div className="bar-fill" style={{ width: `${(i.n / max) * 100}%` }} /></div>
+          <div className="bar-value">{i.n}{unit || ""}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    const init = {};
-    datasets.forEach((d) => { init[d.name] = d.doi || ""; });
-    setEdits(init);
-  }, [datasets]);
+function DatasetsTab({ onChanged, showToast }) {
+  const [ov, setOv] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      await api.saveDatasetDois(edits);
-      showToast("Saved dataset DOIs");
-      onChanged();
-    } catch (e) { showToast(e.message, true); }
-    finally { setSaving(false); }
-  };
+  const load = useCallback(() => {
+    setLoading(true);
+    api.datasetOverview().then(setOv).catch((e) => showToast(e.message, true)).finally(() => setLoading(false));
+  }, [showToast]);
+  useEffect(() => { load(); }, [load]);
 
   const wipeAll = async () => {
-    if (!window.confirm("Delete ALL SAAP and observations from the database? Dataset DOIs are kept. This cannot be undone.")) return;
+    if (!window.confirm("Delete ALL SAAP and observations from the database? This cannot be undone.")) return;
     try {
       const res = await api.deleteSaap({ all: true });
       showToast(`Cleared ${res.deleted} SAAP`);
       onChanged();
+      load();
     } catch (e) { showToast(e.message, true); }
   };
+
+  if (loading) return <div className="card"><div className="spinner">Loading…</div></div>;
+  if (!ov || ov.datasets.length === 0) {
+    return <div className="card"><div className="empty">No datasets yet. Import a file to populate this view.</div></div>;
+  }
 
   return (
     <React.Fragment>
       <div className="card">
-        <h2>Datasets &amp; papers</h2>
-        <div className="desc">Each dataset's DOI links its rows to the source paper.</div>
-        {datasets.length === 0 ? (
-          <div className="empty">No datasets yet. Import a CSV to populate them.</div>
-        ) : (
-          <React.Fragment>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Dataset</th><th className="num">SAAP</th><th className="num">Obs</th><th>DOI / URL</th><th>Link</th></tr></thead>
-                <tbody>
-                  {datasets.map((d) => (
-                    <tr key={d.name}>
-                      <td>{d.name}</td>
-                      <td className="num">{d.n_saap}</td>
-                      <td className="num">{d.n_observations}</td>
-                      <td style={{ minWidth: 320 }}>
-                        <input style={{ width: "100%" }} placeholder="DOI or URL"
-                               value={edits[d.name] ?? ""} onChange={(e) => setEdits((s) => ({ ...s, [d.name]: e.target.value }))} />
-                      </td>
-                      <td>{d.url ? <a className="link" href={d.url} target="_blank" rel="noreferrer">open</a> : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ marginTop: 14 }}><button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save DOIs"}</button></div>
-          </React.Fragment>
-        )}
+        <h2>Trends</h2>
+        <div className="desc">Distinct SAAP behind each value across the whole database.</div>
+        <div className="trend-grid">
+          <div className="trend-panel">
+            <h3>Top substitutions</h3>
+            <BarList items={ov.top_substitutions} />
+          </div>
+          <div className="trend-panel">
+            <h3>Species</h3>
+            <BarList items={ov.species_distribution} />
+          </div>
+          <div className="trend-panel">
+            <h3>Digest</h3>
+            <BarList items={ov.digest_distribution} />
+          </div>
+          <div className="trend-panel">
+            <h3>Acquisition</h3>
+            <BarList items={ov.acquisition_distribution} />
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>By dataset</h2>
+        <div className="desc">{ov.datasets.length} dataset{ov.datasets.length === 1 ? "" : "s"}.</div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset</th><th className="num">SAAP</th><th className="num">Observations</th>
+                <th>Annotated</th><th>Species</th><th>Digest</th><th>Acquisition</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ov.datasets.map((d) => {
+                const pct = d.n_saap ? Math.round((d.n_annotated / d.n_saap) * 100) : 0;
+                return (
+                  <tr key={d.name}>
+                    <td>{d.name}</td>
+                    <td className="num">{d.n_saap}</td>
+                    <td className="num">{d.n_observations}</td>
+                    <td className="annot-cell">
+                      <div className="bar-track small"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
+                      <span className="mono-small">{pct}%</span>
+                    </td>
+                    <td>{chips(d.species, "sub-chip")}</td>
+                    <td>{chips(d.digests, "sub-chip")}</td>
+                    <td>{chips(d.acquisition_types, "sub-chip")}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="danger-zone">
-        <div className="desc" style={{ color: "var(--danger)", fontWeight: 700 }}>
-          Remove all imported SAAP and observations. Dataset DOIs are preserved.
-        </div>
+        <div className="desc">Remove all imported SAAP and observations.</div>
         <button className="danger" onClick={wipeAll}>Clear all data</button>
       </div>
     </React.Fragment>
@@ -623,7 +671,7 @@ function DatasetsTab({ datasets, onChanged, showToast }) {
 }
 
 /* ---------------------------- Detail drawer ----------------------------- */
-function DetailDrawer({ id, datasetUrl, onClose }) {
+function DetailDrawer({ id, onClose }) {
   const [data, setData] = useState(null);
   useEffect(() => { api.detail(id).then(setData); }, [id]);
 
@@ -667,9 +715,7 @@ function DetailDrawer({ id, datasetUrl, onClose }) {
                     <tr key={o.id}>
                       {OBS_COLS.map(([k]) => (
                         <td key={k} className={typeof o[k] === "number" ? "num" : ""}>
-                          {k === "dataset" && datasetUrl[o[k]]
-                            ? <a className="link" href={datasetUrl[o[k]]} target="_blank" rel="noreferrer">{o[k]}</a>
-                            : o[k] === null || o[k] === undefined ? "—"
+                          {o[k] === null || o[k] === undefined ? "—"
                             : typeof o[k] === "number" ? fmt.num(o[k], 3) : o[k]}
                         </td>
                       ))}
@@ -772,7 +818,7 @@ function ExportModal({ mode, selected, filters, total, onClose, showToast }) {
           <p className="hint">
             One row per SAAP-BP pair: the swap in <code>BP&gt;SAAP</code> form plus Ensembl
             gene/transcript/protein IDs, position in protein, gene, accession and
-            description. Run <strong>Refresh all annotations</strong> first to fill these in.
+            description. Run <strong>Annotate new</strong> first to fill these in.
           </p>
         ) : null}
         {format === "fasta" ? (

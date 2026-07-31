@@ -15,16 +15,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
-class DatasetInfo(Base):
-    """Per-dataset metadata, notably the DOI of the source paper. Keyed by the
-    dataset name as it appears in the `Dataset` column of imported files."""
-    __tablename__ = "dataset_info"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    doi: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
-
 class SAAP(Base):
     __tablename__ = "saap"
     __table_args__ = (

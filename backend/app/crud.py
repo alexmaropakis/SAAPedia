@@ -1,11 +1,11 @@
 """Query helpers: list SAAP with per-SAAP rollups, detail, filters, stats."""
 from __future__ import annotations
 
-from sqlalchemy import Select, and_, distinct, exists, func, or_, select
+from sqlalchemy import Select, and_, case, distinct, exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from .models import DatasetInfo, Observation, SAAP
-from .util import doi_to_url
+from .annotate import NEEDS_ANNOTATION
+from .models import Observation, SAAP
 
 # Sort keys the API accepts.
 SORTABLE = {
@@ -236,20 +236,23 @@ def get_pairs_for_export(db: Session, ids: list[int] | None, filters: dict | Non
 
 
 def annotation_status(db: Session) -> dict:
-    """Counts of how many SAAP carry Ensembl IDs / positions."""
+    """Counts of how many SAAP carry Ensembl IDs / positions.
+
+    `n_needs_annotation` uses the exact same condition as an "annotate new"
+    run (`NEEDS_ANNOTATION`), so the count shown in the UI always matches how
+    many rows that button will actually touch.
+    """
     total = db.scalar(select(func.count(SAAP.id))) or 0
-    with_ensembl = db.scalar(
-        select(func.count(SAAP.id)).where(SAAP.ensembl_gene.is_not(None),
-                                          SAAP.ensembl_gene != "")
-    ) or 0
     with_position = db.scalar(
         select(func.count(SAAP.id)).where(SAAP.position_in_protein.is_not(None))
     ) or 0
+    needs_annotation = db.scalar(
+        select(func.count(SAAP.id)).where(NEEDS_ANNOTATION)
+    ) or 0
     return {
         "n_saap": total,
-        "n_with_ensembl": with_ensembl,
         "n_with_position": with_position,
-        "n_unannotated": total - with_ensembl,
+        "n_needs_annotation": needs_annotation,
     }
 
 
@@ -326,35 +329,70 @@ def delete_saap(db: Session, *, ids=None, wipe_all: bool = False) -> int:
     return n
 
 
-def list_datasets(db: Session):
-    """All datasets known to the DB — present in observations and/or with a saved
-    DOI — merged with their paper link and counts."""
+def _ranked(db: Session, col) -> list[dict]:
+    """Distinct-SAAP counts for every value of `col`, most common first."""
+    n_saap = func.count(distinct(Observation.saap_id))
+    rows = db.execute(
+        select(col, n_saap)
+        .where(col.is_not(None), col != "")
+        .group_by(col)
+        .order_by(n_saap.desc())
+    ).all()
+    return [{"label": label, "n": n} for label, n in rows]
+
+
+def dataset_overview(db: Session) -> dict:
+    """Per-dataset summary plus dataset-wide trends, for the Datasets tab.
+
+    Each dataset's row counts distinct SAAP (not raw observation rows) so a
+    dataset with heavy replicate rows doesn't look artificially larger, and
+    `n_annotated` uses the same "has a position" bar as `annotation_status`,
+    so the two views of annotation coverage always agree.
+    """
+    annotated = case((SAAP.position_in_protein.is_not(None), Observation.saap_id))
     rows = db.execute(
         select(
             Observation.dataset,
             func.count(Observation.id),
             func.count(distinct(Observation.saap_id)),
+            func.count(distinct(annotated)),
+            func.group_concat(distinct(Observation.species)),
+            func.group_concat(distinct(Observation.digest)),
+            func.group_concat(distinct(Observation.acquisition_type)),
         )
+        .join(SAAP, SAAP.id == Observation.saap_id)
         .where(Observation.dataset.is_not(None))
         .group_by(Observation.dataset)
+        .order_by(Observation.dataset)
     ).all()
-    counts = {name: (n_obs, n_saap) for name, n_obs, n_saap in rows}
-    doi_by_name = {di.name: di.doi for di in db.scalars(select(DatasetInfo)).all()}
+    datasets = [
+        {
+            "name": name,
+            "n_observations": n_obs,
+            "n_saap": n_saap,
+            "n_annotated": n_annotated,
+            "species": _split(species),
+            "digests": _split(digests),
+            "acquisition_types": _split(acq),
+        }
+        for name, n_obs, n_saap, n_annotated, species, digests, acq in rows
+    ]
 
-    out = []
-    for name in sorted(set(counts) | set(doi_by_name)):
-        n_obs, n_saap = counts.get(name, (0, 0))
-        doi = doi_by_name.get(name)
-        out.append({
-            "name": name, "doi": doi, "url": doi_to_url(doi),
-            "n_observations": n_obs, "n_saap": n_saap,
-        })
-    return out
+    top_substitutions = db.execute(
+        select(SAAP.aa_sub, func.count(SAAP.id))
+        .where(SAAP.aa_sub.is_not(None), SAAP.aa_sub != "")
+        .group_by(SAAP.aa_sub)
+        .order_by(func.count(SAAP.id).desc())
+        .limit(12)
+    ).all()
 
-
-def upsert_dataset_dois(db: Session, mapping: dict) -> int:
-    from .ingest import upsert_dataset_dois as _upsert
-    return _upsert(db, mapping)
+    return {
+        "datasets": datasets,
+        "species_distribution": _ranked(db, Observation.species),
+        "digest_distribution": _ranked(db, Observation.digest),
+        "acquisition_distribution": _ranked(db, Observation.acquisition_type),
+        "top_substitutions": [{"label": a, "n": n} for a, n in top_substitutions],
+    }
 
 
 def stats(db: Session):
