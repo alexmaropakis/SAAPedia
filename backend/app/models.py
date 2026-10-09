@@ -68,6 +68,10 @@ class SAAP(Base):
     # "unmapped" (no Ensembl transcript identical to the protein); NULL =
     # not checked (e.g. non-human). gnomad_af sums every variant producing
     # this exact substitution; gnomad_variants lists their gnomAD IDs.
+    # Cross-species recurrence (orthology.py): "same" / "site" / "" / NULL, plus the
+    # matching SAAP(s) in the other species, e.g. "P02088 E7K".
+    cross_species: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    cross_species_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # UniProt natural variants producing this exact substitution ("VAR_xxx,..."),
     # "" = none, NULL = not checked (no UniProt entry matching the sequence).
     known_variant: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

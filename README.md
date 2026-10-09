@@ -64,6 +64,7 @@ Then open **http://127.0.0.1:8000**.
 | AlphaMissense | AlphaFold DB (human proteome only) | yes |
 | Known variant | UniProt natural variants | yes |
 | Genome-encoded | Exact match of the SAAP peptide against the reference proteome FASTAs in `backend/reference/` (I = L) | no |
+| Other species | Same substitution at the equivalent site of the human/mouse orthologue (sequence-context mapping) | no |
 | gnomAD AF | gnomAD v4 exomes + genomes: germline variants producing the same substitution, via an Ensembl transcript whose protein is identical to the annotated one (human only) | yes |
 
 The gnomAD check and curation run in bulk with one resumable command (it can be stopped and re-run at
@@ -152,6 +153,7 @@ SAAPedia/
         ├── proteome.py     # local reference-proteome match
         ├── gnomad.py       # gnomAD population-variant check
         ├── curate.py       # removal / logging rules
+        ├── orthology.py    # human-mouse recurrence
         ├── data/contaminants.fasta  # cRAP (minus UPS standards) + Arg-C, Lys-C
         ├── fasta.py        # FASTA export
         ├── static/         # build-free React app (index.html, js/, styles.css, vendor/)
@@ -162,11 +164,15 @@ Interactive API docs live at <http://127.0.0.1:8000/docs> while the app is runni
 
 ## References
 
+Ashburner, M., Ball, C. A., Blake, J. A., Botstein, D., Butler, H., Cherry, J. M., Davis, A. P., Dolinski, K., Dwight, S. S., Eppig, J. T., Harris, M. A., Hill, D. P., Issel-Tarver, L., Kasarskis, A., Lewis, S., Matese, J. C., Richardson, J. E., Ringwald, M., Rubin, G. M., & Sherlock, G. (2000). Gene Ontology: Tool for the unification of biology. Nature Genetics, 25(1), 25–29. https://doi.org/10.1038/75556
+
 Chen, S., Francioli, L. C., Goodrich, J. K., Collins, R. L., Kanai, M., Wang, Q., Alföldi, J., Watts, N. A., Vittal, C., Gauthier, L. D., Poterba, T., Wilson, M. W., Tarasova, Y., Phu, W., Grant, R., Yohannes, M. T., Koenig, Z., Farjoun, Y., Banks, E., . . . Karczewski, K. J. (2024). A genomic mutational constraint map using variation in 76,156 human genomes. Nature, 625(7993), 92–100. https://doi.org/10.1038/s41586-023-06045-0
 
 Cheng, J., Novati, G., Pan, J., Bycroft, C., Žemgulytė, A., Applebaum, T., Pritzel, A., Wong, L. H., Zielinski, M., Sargeant, T., Schneider, R. G., Senior, A. W., Jumper, J., Hassabis, D., Kohli, P., & Avsec, Ž. (2023). Accurate proteome-wide missense variant effect prediction with AlphaMissense. Science, 381(6664), Article eadg7492. https://doi.org/10.1126/science.adg7492
 
 Dyer, S. C., Austine-Orimoloye, O., Azov, A. G., Barba, M., Barnes, I., Barrera-Enriquez, V. P., Becker, A., Bennett, R., Beracochea, M., Berry, A., Bhai, J., Bhurji, S. K., Boddu, S., Branco Lins, P. R., Brooks, L., Ramaraju, S. B., Campbell, L. I., Martinez, M. C., Charkhchi, M., . . . Yates, A. D. (2025). Ensembl 2025. Nucleic Acids Research, 53(D1), D948–D957. https://doi.org/10.1093/nar/gkae1071
+
+The Gene Ontology Consortium, Aleksander, S. A., Balhoff, J., Carbon, S., Cherry, J. M., Drabkin, H. J., Ebert, D., Feuermann, M., Gaudet, P., Harris, N. L., Hill, D. P., Lee, R., Mi, H., Moxon, S., Mungall, C. J., Muruganugan, A., Mushayahama, T., Sternberg, P. W., Thomas, P. D., . . . Westerfield, M. (2023). The Gene Ontology knowledgebase in 2023. Genetics, 224(1), Article iyad031. https://doi.org/10.1093/genetics/iyad031
 
 The Global Proteome Machine Organization. (n.d.). cRAP protein sequences [Data set]. Retrieved October 8, 2026, from https://www.thegpm.org/crap/
 
@@ -184,7 +190,11 @@ Kawashima, S., Pokarowski, P., Pokarowska, M., Kolinski, A., Katayama, T., & Kan
 
 Li, W.-H., Wu, C.-I., & Luo, C.-C. (1984). Nonrandomness of point mutation as reflected in nucleotide substitutions in pseudogenes and its evolutionary implications. Journal of Molecular Evolution, 21(1), 58–71. https://doi.org/10.1007/BF02100628
 
+Milacic, M., Beavers, D., Conley, P., Gong, C., Gillespie, M., Griss, J., Haw, R., Jassal, B., Matthews, L., May, B., Petryszak, R., Ragueneau, E., Rothfels, K., Sevilla, C., Shamovsky, V., Stephan, R., Tiwari, K., Varusai, T., Weiser, J., . . . D’Eustachio, P. (2024). The Reactome Pathway Knowledgebase 2024. Nucleic Acids Research, 52(D1), D672–D678. https://doi.org/10.1093/nar/gkad1025
+
 Rego, N., & Koes, D. (2015). 3Dmol.js: Molecular visualization with WebGL. Bioinformatics, 31(8), 1322–1324. https://doi.org/10.1093/bioinformatics/btu829
+
+Tsour, S., Machné, R., Leduc, A., Widmer, S., Koo, E., Guez, J., Karczewski, K. J., & Slavov, N. (2026). Alternate RNA decoding results in stable and abundant proteins in mammals. Nature, 656(8127), 506–515. https://doi.org/10.1038/s41586-026-10678-2
 
 The UniProt Consortium. (2025). UniProt: The Universal Protein Knowledgebase in 2025. Nucleic Acids Research, 53(D1), D609–D617. https://doi.org/10.1093/nar/gkae1010
 

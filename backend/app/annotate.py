@@ -1223,6 +1223,8 @@ def annotate_saaps(
     from .proteome import check_all
     from . import gnomad
     check_all(db)
+    from . import orthology
+    orthology.check_all(db)
     try:
         result.gnomad = gnomad.check_all(db)
     except Exception as exc:  # never fail annotation over the population check

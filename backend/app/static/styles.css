@@ -383,3 +383,40 @@ details[open] summary { margin-bottom: 8px; }
 /* wordmark */
 .wordmark .wm-saap { color: var(--accent); }
 .wordmark .wm-sub { color: var(--mark); }
+
+/* substitution matrix */
+.matrix { position: relative; padding: 14px 16px 10px; }
+.matrix svg { display: block; width: 100%; height: auto; margin: 0 auto; overflow: visible; }
+.mx-axis { font: 600 15px var(--mono); fill: var(--text-2); text-anchor: middle; }
+.mx-group { font-size: 14px; font-weight: 500; fill: var(--text-2); text-anchor: middle; }
+.mx-group.left { text-anchor: end; }
+.mx-title { font-size: 14px; font-weight: 600; fill: var(--muted); text-anchor: middle; letter-spacing: .02em; }
+.mx-bracket { stroke: var(--border-strong); stroke-width: 1.5; stroke-linecap: round; }
+.mx-cell { stroke: none; }
+.mx-cell.has { cursor: pointer; }
+.mx-cell.has:hover { stroke: var(--text); stroke-width: 1.5; }
+.mx-cell.diag { fill: transparent; stroke: var(--border-strong); stroke-dasharray: 2 2; }
+.mx-tick { stroke: var(--muted); stroke-width: 1; }
+.mx-legend-label { font-size: 13px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.card-head.sub { border-top: 1px solid var(--border); }
+.kv.fn .v.text { font-family: var(--sans); font-size: 13px; word-break: normal; line-height: 1.55; }
+.terms { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.terms a.chip { color: var(--text-2); text-decoration: none; }
+.terms a.chip:hover { background: var(--accent-weak); color: var(--accent); }
+
+/* about */
+.about-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px 28px; padding: 18px 16px 6px; }
+.about h3 { font-size: 13px; margin-bottom: 6px; }
+.about p, .about li { color: var(--text-2); line-height: 1.55; margin: 0 0 6px; }
+.about ul { margin: 0; padding-left: 18px; }
+.about .refs { padding: 6px 16px 16px; }
+.about .refs ol { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.about .refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
+
+.metrics.saap-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.metrics.saap-metrics .metric:nth-child(5n) { border-right: 0; }
+.metrics.saap-metrics .metric:nth-child(-n+5) { border-bottom: 1px solid var(--border); }
+@media (max-width: 900px) { .metrics.saap-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+

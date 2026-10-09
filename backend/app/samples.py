@@ -4,6 +4,13 @@ cell type and its species. Dataset/study names, TMT plexes and source files
 stay private (see PRIVATE); datasets of the same tissue are grouped, and
 disease cohorts (AD, PD, cancers, ...) are labelled by tissue alone. Labels
 read "Organ (sub-site)" where a sub-site is known, e.g. "Brain (frontal cortex)".
+
+References
+----------
+Tsour, S., Machné, R., Leduc, A., Widmer, S., Koo, E., Guez, J., Karczewski, K.
+    J., & Slavov, N. (2026). Alternate RNA decoding results in stable and
+    abundant proteins in mammals. Nature, 656(8127), 506–515.
+    https://doi.org/10.1038/s41586-026-10678-2
 """
 from __future__ import annotations
 
@@ -22,7 +29,7 @@ CELL_TYPES = {"bcells": "Blood (B cells)", "monocytes": "Blood (monocytes)", "nk
 TISSUES = {
     # brain: regions, fractions and brain-bank cohorts
     "anteriorcingulategyrus": "Brain (anterior cingulate gyrus)", "frontalcortex": "Brain (frontal cortex)",
-    "cerebralcortex": "Brain (cerebral cortex)", "cerebellum": "Brain (cerebellum)", "cortex": "Brain (cortex)",
+    "cerebralcortex": "Brain (cerebral cortex)", "cerebellum": "Brain (cerebellum)", "cortex": "Brain (cerebral cortex)",
     "hippocampus": "Brain (hippocampus)", "striatum": "Brain (striatum)",
     "insolubleproteomematched": "Brain (insoluble)",
     "pooledbrain": "Brain", "brain": "Brain", "ptipd2026": "Brain", "ptiad2026": "Brain",

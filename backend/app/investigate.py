@@ -32,6 +32,14 @@ Jumper, J., Evans, R., Pritzel, A., Green, T., Figurnov, M., Ronneberger, O.,
 The UniProt Consortium. (2025). UniProt: The Universal Protein Knowledgebase in
     2025. Nucleic Acids Research, 53(D1), D609–D617.
     https://doi.org/10.1093/nar/gkae1010
+
+Varadi, M., Bertoni, D., Magana, P., Paramval, U., Pidruchna, I.,
+    Radhakrishnan, M., Tsenkov, M., Nair, S., Mirdita, M., Yeo, J.,
+    Kovalevskiy, O., Tunyasuvunakool, K., Laydon, A., Žídek, A., Tomlinson, H.,
+    Hariharan, D., Abrahamson, J., Green, T., Jumper, J., . . . Velankar, S.
+    (2024). AlphaFold Protein Structure Database in 2024: Providing structure
+    coverage for over 214 million protein sequences. Nucleic Acids Research,
+    52(D1), D368–D375. https://doi.org/10.1093/nar/gkad1011
 """
 from __future__ import annotations
 
@@ -94,6 +102,54 @@ def _remote(fetch, accession: str) -> dict:
         return {"available": False, "error": str(exc)}
 
 
+NEAREST = 3
+
+
+def _nearest(pos: int, functional: list[dict], coords: dict) -> list[dict]:
+    """Closest annotated functional residues to `pos` in the AlphaFold model
+    (C-alpha distance, Å); the site's own residue is included at 0 Å."""
+    if pos not in coords:
+        return []
+    x0 = coords[pos]
+    by_residue: dict[int, dict] = {}
+    for f in functional:
+        for r in {f["start"], f["end"]}:
+            if r not in coords:
+                continue
+            hit = by_residue.setdefault(r, {
+                "residue": r, "annotations": [], "sequence_separation": abs(r - pos),
+                "distance": round(sum((a - b) ** 2 for a, b in zip(x0, coords[r])) ** 0.5, 1)})
+            label = f"{f['type']}: {f['description']}" if f["description"] else f["type"]
+            if label not in hit["annotations"]:
+                hit["annotations"].append(label)
+    return sorted(by_residue.values(), key=lambda h: h["distance"])[:NEAREST]
+
+
+def substitution_matrix(db: Session, species: str | None = None, tissue: str | None = None) -> dict:
+    """Distinct SAAP per (reference, substituted) residue, optionally within a species / tissue."""
+    from sqlalchemy import and_, exists, or_
+
+    from .models import Observation
+
+    stmt = select(SAAP)
+    conds = []
+    if species:
+        conds.append(Observation.species == species)
+    if tissue:
+        conds.append(or_(Observation.tissue == tissue, Observation.tissue.like(tissue.replace("%", "") + " (%")))
+    if conds:
+        stmt = stmt.where(exists().where(and_(Observation.saap_id == SAAP.id, *conds)))
+    counts: dict[str, dict[str, int]] = {}
+    total = 0
+    for s in db.scalars(stmt):
+        ref, alt = residues(s)
+        if ref in AA and alt in AA and ref != alt:
+            counts.setdefault(ref, {}).setdefault(alt, 0)
+            counts[ref][alt] += 1
+            total += 1
+    return {"residues": AA, "counts": counts, "total": total}
+
+
 def protein_annotations(db: Session, accession: str) -> dict | None:
     view = protein_view(db, accession)
     if view is None:
@@ -116,6 +172,14 @@ def protein_annotations(db: Session, accession: str) -> dict | None:
             am_mean.append(round(sum(vals) / len(vals), 3) if vals else None)
 
     variants = [f for f in features if f["track"] == "variant"]
+    # Functional residues for 3D proximity: active/binding/other sites and PTMs.
+    functional = [f for f in features if f["track"] in ("site", "ptm")]
+    coords = {}
+    if af_match and af.get("pdb_url") and functional:
+        try:
+            coords = external.ca_coordinates(accession)
+        except external.ExternalError:
+            coords = {}
     sites = {}
     for s in view["sites"]:
         pos, alt = (s["positions"] or [None])[0], s["alt"]
@@ -123,6 +187,7 @@ def protein_annotations(db: Session, accession: str) -> dict | None:
             continue
         cell = (am.get(str(pos)) or [None] * 20)[AA.index(alt)] if am and alt in AA else None
         sites[s["id"]] = {
+            "nearest": _nearest(pos, functional, coords),
             "plddt": plddt[pos - 1] if plddt and pos <= len(plddt) else None,
             "am_pathogenicity": cell[0] if cell else None,
             "am_class": cell[1] if cell else None,

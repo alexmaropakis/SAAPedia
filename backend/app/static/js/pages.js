@@ -85,6 +85,78 @@ function FlapBoard() {
   );
 }
 
+/** APA 7 references (verified against Crossref; same list as the README). */
+const REFERENCES = [
+ "Ashburner, M., Ball, C. A., Blake, J. A., Botstein, D., Butler, H., Cherry, J. M., Davis, A. P., Dolinski, K., Dwight, S. S., Eppig, J. T., Harris, M. A., Hill, D. P., Issel-Tarver, L., Kasarskis, A., Lewis, S., Matese, J. C., Richardson, J. E., Ringwald, M., Rubin, G. M., & Sherlock, G. (2000). Gene Ontology: Tool for the unification of biology. Nature Genetics, 25(1), 25–29. https://doi.org/10.1038/75556",
+ "Chen, S., Francioli, L. C., Goodrich, J. K., Collins, R. L., Kanai, M., Wang, Q., Alföldi, J., Watts, N. A., Vittal, C., Gauthier, L. D., Poterba, T., Wilson, M. W., Tarasova, Y., Phu, W., Grant, R., Yohannes, M. T., Koenig, Z., Farjoun, Y., Banks, E., . . . Karczewski, K. J. (2024). A genomic mutational constraint map using variation in 76,156 human genomes. Nature, 625(7993), 92–100. https://doi.org/10.1038/s41586-023-06045-0",
+ "Cheng, J., Novati, G., Pan, J., Bycroft, C., Žemgulytė, A., Applebaum, T., Pritzel, A., Wong, L. H., Zielinski, M., Sargeant, T., Schneider, R. G., Senior, A. W., Jumper, J., Hassabis, D., Kohli, P., & Avsec, Ž. (2023). Accurate proteome-wide missense variant effect prediction with AlphaMissense. Science, 381(6664), Article eadg7492. https://doi.org/10.1126/science.adg7492",
+ "Dyer, S. C., Austine-Orimoloye, O., Azov, A. G., Barba, M., Barnes, I., Barrera-Enriquez, V. P., Becker, A., Bennett, R., Beracochea, M., Berry, A., Bhai, J., Bhurji, S. K., Boddu, S., Branco Lins, P. R., Brooks, L., Ramaraju, S. B., Campbell, L. I., Martinez, M. C., Charkhchi, M., . . . Yates, A. D. (2025). Ensembl 2025. Nucleic Acids Research, 53(D1), D948–D957. https://doi.org/10.1093/nar/gkae1071",
+ "The Gene Ontology Consortium, Aleksander, S. A., Balhoff, J., Carbon, S., Cherry, J. M., Drabkin, H. J., Ebert, D., Feuermann, M., Gaudet, P., Harris, N. L., Hill, D. P., Lee, R., Mi, H., Moxon, S., Mungall, C. J., Muruganugan, A., Mushayahama, T., Sternberg, P. W., Thomas, P. D., . . . Westerfield, M. (2023). The Gene Ontology knowledgebase in 2023. Genetics, 224(1), Article iyad031. https://doi.org/10.1093/genetics/iyad031",
+ "The Global Proteome Machine Organization. (n.d.). cRAP protein sequences [Data set]. Retrieved October 8, 2026, from https://www.thegpm.org/crap/",
+ "Grantham, R. (1974). Amino acid difference formula to help explain protein evolution. Science, 185(4154), 862–864. https://doi.org/10.1126/science.185.4154.862",
+ "Guez, J., Goodrich, J. K., Moldovan, M. A., Chao, K. R., Kar, P., Panchal, R., Wilson, M. W., Laricchia, K. M., Rohlicek, G., Biba, D., Marten, D., He, Q., Darnowsky, P. W., Grant, R., Weisburd, B., Baxter, S. M., Nadeau, J., Lu, W., Jahl, S., . . . Karczewski, K. J. (2026). Integrating 730,947 exome sequences with clinical literature improves gene discovery [Preprint]. medRxiv. https://doi.org/10.64898/2026.03.23.26349081",
+ "Henikoff, S., & Henikoff, J. G. (1992). Amino acid substitution matrices from protein blocks. Proceedings of the National Academy of Sciences, 89(22), 10915–10919. https://doi.org/10.1073/pnas.89.22.10915",
+ "Jumper, J., Evans, R., Pritzel, A., Green, T., Figurnov, M., Ronneberger, O., Tunyasuvunakool, K., Bates, R., Žídek, A., Potapenko, A., Bridgland, A., Meyer, C., Kohl, S. A. A., Ballard, A. J., Cowie, A., Romera-Paredes, B., Nikolov, S., Jain, R., Adler, J., . . . Hassabis, D. (2021). Highly accurate protein structure prediction with AlphaFold. Nature, 596(7873), 583–589. https://doi.org/10.1038/s41586-021-03819-2",
+ "Karczewski, K. J., Francioli, L. C., Tiao, G., Cummings, B. B., Alföldi, J., Wang, Q., Collins, R. L., Laricchia, K. M., Ganna, A., Birnbaum, D. P., Gauthier, L. D., Brand, H., Solomonson, M., Watts, N. A., Rhodes, D., Singer-Berk, M., England, E. M., Seaby, E. G., Kosmicki, J. A., . . . MacArthur, D. G. (2020). The mutational constraint spectrum quantified from variation in 141,456 humans. Nature, 581(7809), 434–443. https://doi.org/10.1038/s41586-020-2308-7",
+ "Kawashima, S., Pokarowski, P., Pokarowska, M., Kolinski, A., Katayama, T., & Kanehisa, M. (2008). AAindex: Amino acid index database, progress report 2008. Nucleic Acids Research, 36(Database issue), D202–D205. https://doi.org/10.1093/nar/gkm998",
+ "Li, W.-H., Wu, C.-I., & Luo, C.-C. (1984). Nonrandomness of point mutation as reflected in nucleotide substitutions in pseudogenes and its evolutionary implications. Journal of Molecular Evolution, 21(1), 58–71. https://doi.org/10.1007/BF02100628",
+ "Milacic, M., Beavers, D., Conley, P., Gong, C., Gillespie, M., Griss, J., Haw, R., Jassal, B., Matthews, L., May, B., Petryszak, R., Ragueneau, E., Rothfels, K., Sevilla, C., Shamovsky, V., Stephan, R., Tiwari, K., Varusai, T., Weiser, J., . . . D’Eustachio, P. (2024). The Reactome Pathway Knowledgebase 2024. Nucleic Acids Research, 52(D1), D672–D678. https://doi.org/10.1093/nar/gkad1025",
+ "Rego, N., & Koes, D. (2015). 3Dmol.js: Molecular visualization with WebGL. Bioinformatics, 31(8), 1322–1324. https://doi.org/10.1093/bioinformatics/btu829",
+ "Tsour, S., Machné, R., Leduc, A., Widmer, S., Koo, E., Guez, J., Karczewski, K. J., & Slavov, N. (2026). Alternate RNA decoding results in stable and abundant proteins in mammals. Nature, 656(8127), 506–515. https://doi.org/10.1038/s41586-026-10678-2",
+ "The UniProt Consortium. (2025). UniProt: The Universal Protein Knowledgebase in 2025. Nucleic Acids Research, 53(D1), D609–D617. https://doi.org/10.1093/nar/gkae1010",
+ "Varadi, M., Bertoni, D., Magana, P., Paramval, U., Pidruchna, I., Radhakrishnan, M., Tsenkov, M., Nair, S., Mirdita, M., Yeo, J., Kovalevskiy, O., Tunyasuvunakool, K., Laydon, A., Žídek, A., Tomlinson, H., Hariharan, D., Abrahamson, J., Green, T., Jumper, J., . . . Velankar, S. (2024). AlphaFold Protein Structure Database in 2024: Providing structure coverage for over 214 million protein sequences. Nucleic Acids Research, 52(D1), D368–D375. https://doi.org/10.1093/nar/gkad1011"
+];
+
+const doiLink = (ref) => {
+  const m = ref.match(/^(.*?)(https:\/\/\S+)$/);
+  return m ? <Fragment>{m[1]}<a href={m[2]} target="_blank" rel="noopener noreferrer">{m[2]}</a></Fragment> : ref;
+};
+
+function About() {
+  return (
+    <div className="card about" id="about">
+      <div className="card-head"><h2>About</h2></div>
+      <div className="about-grid">
+        <section>
+          <h3>What's here</h3>
+          <p>Amino acid substitutions that arise when mRNA is decoded differently from what the genome encodes,
+            known as alternate RNA decoding (Tsour et al., 2026).</p>
+          <p>Each entry is a substituted amino acid peptide (SAAP): a peptide detected by mass spectrometry that differs
+            from its genome-encoded base peptide at a single residue. SAAPs are mapped to their protein and position,
+            and reported by tissue or cell type in human and mouse.</p>
+        </section>
+        <section>
+          <h3>Curation</h3>
+          <ul>
+            <li>Immunoglobulins and common contaminants (cRAP) removed</li>
+            <li>Peptides already encoded in the reference proteome removed (I = L)</li>
+            <li>Substitutions matching gnomAD variants at AF ≥ 0.0001, or known variants not confirmed rare, removed</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Annotation</h3>
+          <ul>
+            <li>UniProt features, function, Gene Ontology and Reactome</li>
+            <li>AlphaFold structure, pLDDT and 3D distance to functional sites</li>
+            <li>AlphaMissense, BLOSUM62 and Grantham substitution scores</li>
+            <li>Human–mouse recurrence of each substitution</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Data &amp; citation</h3>
+          <p>Samples are described by tissue or cell type and species only. Please cite SAAPedia and the resources below
+            when using these data.</p>
+          <p><a href="https://github.com/alexmaropakis/SAAPedia" target="_blank" rel="noopener noreferrer">github.com/alexmaropakis/SAAPedia</a></p>
+        </section>
+      </div>
+      <details className="refs">
+        <summary>References ({REFERENCES.length})</summary>
+        <ol>{REFERENCES.map((r) => <li key={r}>{doiLink(r)}</li>)}</ol>
+      </details>
+    </div>
+  );
+}
+
 function HomePage({ stats }) {
   const [q, setQ] = useState("");
   const [proteins] = useAsync(() => api.proteins({ sort: "n_saap", order: "desc", page_size: 8 }), []);
@@ -139,6 +211,8 @@ function HomePage({ stats }) {
           <div className="card-body">{overview ? <BarList items={overview.top_substitutions.slice(0, 8)} /> : <Loading />}</div>
         </div>
       </div>
+      <MatrixCard />
+      <About />
     </div>
   );
 }
@@ -171,6 +245,8 @@ const COLUMNS = [
   { key: "greater_than_shared", label: "> Shared", hidden: true, render: (r) => fmt.bool(r.greater_than_shared) },
   { key: "at_cleavage_site", label: "Cleavage site", title: "Computed: the reference or substituted residue is a cut site for the observed digest",
     render: (r) => fmt.bool(r.at_cleavage_site) },
+  { key: "cross_species", label: "Both species", title: "Same substitution observed in human and mouse (identical peptide or orthologous site)",
+    render: (r) => (r.cross_species === "same" ? <span className="yes">Yes</span> : r.cross_species == null ? DASH : <span className="no">No</span>) },
   { key: "gnomad_af", label: "gnomAD AF", sortable: true, num: true,
     title: "gnomAD v4 allele frequency of germline variants producing this exact substitution (human)",
     render: (r) => (r.gnomad_status === "present" ? fmtAF(r.gnomad_af) : r.gnomad_status === "absent" ? <span className="no">Absent</span> : DASH) },
@@ -185,6 +261,7 @@ const FILTERS = [
   { key: "aa_sub", label: "AAS", facet: "aa_subs" },
   { key: "at_cleavage_site", label: "Cleavage site", bool: true },
   { key: "in_gnomad", label: "In gnomAD", bool: true },
+  { key: "cross_species", label: "Recurs in other species", bool: true },
   { key: "min_pos_prob", label: "Min PosProb", number: true, step: 0.01 },
   { key: "max_pep", label: "Max PEP", number: true, step: "any" },
 ];
@@ -429,6 +506,63 @@ function ObservationsTable({ observations }) {
   );
 }
 
+/* ======================== Function & proximity ======================== */
+const cleanText = (t) => t.replace(/\s*\((?:PubMed|By similarity|Probable)[^)]*\)/g, "").replace(/\s+\./g, ".");
+const browseSubstitution = (r, a) => {
+  try {
+    sessionStorage.setItem("browse.filters", JSON.stringify({ ...DEFAULT_FILTERS, aa_sub: `${r} to ${a}` }));
+    sessionStorage.setItem("browse.page", "1");
+  } catch { /* unavailable */ }
+  go("browse");
+};
+
+function TermList({ items, href, max = 10 }) {
+  const [all, setAll] = useState(false);
+  if (!items || !items.length) return DASH;
+  const shown = all ? items : items.slice(0, max);
+  return (
+    <span className="terms">
+      {shown.map((t) => <a key={t.id} className="chip" href={href(t.id)} target="_blank" rel="noopener noreferrer" title={t.id}>{t.term || t.name}</a>)}
+      {items.length > max && <button className="ghost sm" onClick={() => setAll((a) => !a)}>{all ? "Less" : `+${items.length - max}`}</button>}
+    </span>
+  );
+}
+
+/** UniProt function, subcellular location, GO terms and Reactome pathways. */
+function FunctionCard({ accession, compact }) {
+  const [f, error] = useAsync(() => api.proteinFunction(accession), [accession]);
+  return (
+    <div className="card">
+      <div className="card-head"><h2>Function</h2><span className="muted">UniProt · Gene Ontology · Reactome</span></div>
+      {error ? <div className="notice">{error.message}</div> : !f ? <Loading /> : !f.available ? <div className="notice">No UniProt entry</div> : (
+        <div className="kv fn">
+          {f.function.length > 0 && <Fragment><div className="k">Function</div><div className="v text">{cleanText(compact ? f.function[0] : f.function.join(" "))}</div></Fragment>}
+          <div className="k">Subcellular location</div><div className="v text">{f.locations.length ? f.locations.map((l) => <span key={l} className="chip">{l}</span>) : DASH}</div>
+          {(f.reactome.length > 0 || f.pathways.length > 0) && <Fragment><div className="k">Pathways</div><div className="v text">
+            <TermList items={f.reactome} href={(id) => `https://reactome.org/content/detail/${id}`} max={compact ? 6 : 12} />
+            {f.pathways.map((p) => <div key={p} className="muted">{p}</div>)}
+          </div></Fragment>}
+          {[["P", "Biological process"], ["F", "Molecular function"], ["C", "Cellular component"]].map(([k, label]) => (
+            <Fragment key={k}><div className="k">{label}</div><div className="v text">
+              <TermList items={f.go[k]} href={(id) => `https://www.ebi.ac.uk/QuickGO/term/${id}`} max={compact ? 6 : 10} /></div></Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProximityMetric({ site }) {
+  const title = "C-alpha distance in the AlphaFold model to the nearest UniProt active/binding site or PTM";
+  if (!site) return <Metric k="Nearest functional site" v={null} title={title} />;
+  const h = (site.nearest || [])[0];
+  if (!h) return <Metric k="Nearest functional site" v={null} d="No structure or annotated sites" title={title} />;
+  if (h.distance === 0) return <Metric k="Nearest functional site" v="At site" d={h.annotations[0]} dClass="bad" title={title} />;
+  return <Metric k="Nearest functional site" v={`${h.distance.toFixed(1)} Å`}
+                 d={`${(h.annotations[0].split(": ")[1] || h.annotations[0])} at ${h.residue} · ${plural(h.sequence_separation, "residue")} away`}
+                 dClass={h.distance < 8 ? "bad" : ""} title={title + "\n" + h.annotations.join("\n")} />;
+}
+
 /* =============================== Protein ============================== */
 function FeatureTable({ features, sites }) {
   if (!features) return <Loading />;
@@ -487,6 +621,7 @@ function ProteinPage({ accession, initialTab }) {
         <ProteinMap length={p.length} sequence={p.sequence} sites={sites} annotations={ann}
                     onSelect={(g) => { setPos(g.pos); setTab("sites"); }} />
       </div>
+      <FunctionCard accession={accession} />
       <div className="card"><SequenceView sequence={p.sequence} sites={sites} plddt={af && af.plddt} /></div>
       <div className="card">
         <Tabs value={tab} onChange={setTab} tabs={[["sites", "SAAP", shown.length], ["features", "Features", ann ? ann.uniprot.features.filter((f) => f.track !== "variant").length : null], ...(af && af.has_structure ? [["structure", "Structure"]] : [])]} />
@@ -529,6 +664,22 @@ function ProteinPage({ accession, initialTab }) {
 /* ================================ SAAP ================================ */
 const PLDDT_TITLE = "pLDDT: AlphaFold's per-residue confidence in its predicted structure (0–100)";
 
+function CrossSpeciesMetric({ s }) {
+  const title = "Is this substitution also observed in the other species, at the equivalent site of the orthologous protein? "
+    + "The variant is numbered in that species' own protein.";
+  if (s.cross_species == null) return <Metric k="Other species" v={null} d="No orthologue with SAAPs" title={title} />;
+  if (s.cross_species === "") return <Metric k="Other species" v="Not seen" d="No SAAP at the equivalent site" title={title} />;
+  let matches = [];
+  try { matches = JSON.parse(s.cross_species_detail || "[]"); } catch { /* legacy text */ }
+  if (matches[0] && matches[0].identical) return <Metric k="Other species" v="Recurs" dClass="ok" d="Same peptide seen in human and mouse" title={title} />;
+  const m = matches[0] || {};
+  const label = <Fragment>{m.species && m.species.toLowerCase()} as <a href={`#/saap/${m.saap_id}`}>{m.gene || m.accession} {m.variant}</a>
+    {matches.length > 1 && ` +${matches.length - 1}`}</Fragment>;
+  return s.cross_species === "same"
+    ? <Metric k="Other species" v="Recurs" dClass="ok" d={<Fragment>Also in {label}</Fragment>} title={title} />
+    : <Metric k="Other species" v="Same site" d={<Fragment>Different change in {label}</Fragment>} title={title} />;
+}
+
 function KnownVariantMetric({ s, site }) {
   if (!site) return <Metric k="UniProt variant" v={null} />;
   const vs = site.known_variants;
@@ -552,7 +703,7 @@ function GnomadMetric({ s, human }) {
 }
 
 /** UniProt features overlapping the substitution site. */
-function SiteContext({ pos, features }) {
+function SiteContext({ pos, features, nearest }) {
   const here = features.filter((f) => f.track !== "variant" && f.start <= pos && pos <= f.end)
     .sort((a, b) => (a.end - a.start) - (b.end - b.start));
   return (
@@ -564,6 +715,17 @@ function SiteContext({ pos, features }) {
             <td className="num mono">{f.start === f.end ? f.start : `${f.start}–${f.end}`}</td></tr>
         ))}</tbody></table>
       ) : <div className="notice">No annotated feature covers this position</div>}
+      {nearest && nearest.length > 0 && (
+        <Fragment>
+          <div className="card-head sub"><h2>Nearest in 3D</h2><span className="muted">annotated active/binding sites and PTMs · AlphaFold model</span></div>
+          <table><tbody>{nearest.map((h) => (
+            <tr key={h.residue}><td className="num mono" style={{ width: 80 }}>{h.distance.toFixed(1)} Å</td>
+              <td className="mono" style={{ width: 70 }}>{h.residue}</td>
+              <td>{h.annotations.join(" · ")}</td>
+              <td className="num muted">{plural(h.sequence_separation, "residue")} apart</td></tr>
+          ))}</tbody></table>
+        </Fragment>
+      )}
     </div>
   );
 }
@@ -608,7 +770,7 @@ function SaapPage({ id, initialTab }) {
         </div>
       </div>
 
-      <div className="metrics">
+      <div className="metrics saap-metrics">
         <Metric k="Variant" mono v={variant} dClass={refMismatch ? "bad" : ""}
                 d={!variant ? "Not positioned" : refMismatch ? `Protein has ${protRes}${s.positions[0]}, not ${s.ref}`
                   : `p.${AA3[s.ref]}${s.positions[0]}${AA3[s.alt]}${s.positions.length > 1 ? ` · ${s.positions.length} repeat sites` : ""}`} />
@@ -619,6 +781,8 @@ function SaapPage({ id, initialTab }) {
         <Metric k="AlphaMissense" v={site && site.am_pathogenicity != null ? site.am_pathogenicity.toFixed(3) : acc && !ann ? <Spinner /> : null}
                 d={site && site.am_class ? AM_CLASS[site.am_class] : protRes && protRes === s.alt ? `Not scored: protein already has ${s.alt}` : af && !af.am_mean && !af.issue ? "Not available for this proteome" : af && af.issue}
                 dClass={site && site.am_class === "LPath" ? "bad" : ""} title="AlphaMissense pathogenicity · likely benign < 0.34 · ambiguous 0.34–0.564 · likely pathogenic > 0.564" />
+        <ProximityMetric site={site} />
+        <CrossSpeciesMetric s={s} />
         <KnownVariantMetric s={s} site={site} />
         <GnomadMetric s={s} human={species.includes("Homo sapiens")} />
       </div>
@@ -635,7 +799,8 @@ function SaapPage({ id, initialTab }) {
         </div>
       )}
 
-      {view && s.positions.length > 0 && ann && <SiteContext pos={s.positions[0]} features={ann.uniprot.features} />}
+      {view && s.positions.length > 0 && ann && <SiteContext pos={s.positions[0]} features={ann.uniprot.features} nearest={site && site.nearest} />}
+      {acc && <FunctionCard accession={acc} compact />}
       {view && <div className="card"><SequenceView sequence={view.protein.sequence} sites={view.sites} focus={s.id} plddt={af && af.plddt} /></div>}
 
       <div className="card">
@@ -701,6 +866,26 @@ function GroupTable({ rows, label, clickable }) {
   );
 }
 
+function MatrixCard({ tissues }) {
+  const [species, setSpecies] = useState("");
+  const [tissue, setTissue] = useState("");
+  const [data, error] = useAsync(() => api.substitutions({ species, tissue }), [species, tissue], true);
+  const options = tissues ? [...new Set(tissues.flatMap((t) => [t.name, t.name.split(" (")[0]]))].sort() : [];
+  return (
+    <div className="card">
+      <div className="card-head"><h2>Amino acid substitution landscape</h2><span className="muted">{data ? `n = ${data.total.toLocaleString()} SAAPs` : ""}</span>
+        {tissues && <div className="map-tools">
+          <select value={species} onChange={(e) => setSpecies(e.target.value)}><option value="">All species</option>
+            <option>Homo sapiens</option><option>Mus musculus</option></select>
+          <select value={tissue} onChange={(e) => setTissue(e.target.value)}><option value="">All tissues</option>
+            {options.map((o) => <option key={o}>{o}</option>)}</select>
+        </div>}
+      </div>
+      {error ? <ErrorNote error={error} /> : <SubstitutionMatrix data={data} onSelect={browseSubstitution} />}
+    </div>
+  );
+}
+
 function TissuesPage({ stats }) {
   const toast = useToast();
   const [ov, error, reload] = useAsync(api.datasets, []);
@@ -725,6 +910,9 @@ function TissuesPage({ stats }) {
         <Metric k="SAAP" v={stats.n_saap.toLocaleString()} />
         <Metric k="Observations" v={stats.n_observations.toLocaleString()} />
         <Metric k="Tissues & cell types" v={stats.n_tissues.toLocaleString()} />
+        <Metric k="Recur in human & mouse" v={stats.n_cross_species.toLocaleString()}
+                d={<a onClick={(e) => { e.preventDefault(); try { sessionStorage.setItem("browse.filters", JSON.stringify({ ...DEFAULT_FILTERS, cross_species: "true" })); sessionStorage.setItem("browse.page", "1"); } catch { /* unavailable */ } go("browse"); }} href="#/browse">Browse them</a>}
+                title="Same substitution observed in both species: identical peptide, or the equivalent site of the orthologous protein" />
         <Metric k="Proteins" v={stats.n_proteins.toLocaleString()} />
         <Metric k="Genes" v={stats.n_genes.toLocaleString()} />
       </div>}
@@ -735,6 +923,7 @@ function TissuesPage({ stats }) {
             <div className="card-body"><BarList items={items} /></div></div>
         ))}
       </div>
+      <MatrixCard tissues={ov.tissues} />
       <div className="card">
         <div className="card-head"><h2>Tissues &amp; cell types</h2><span className="muted">{ov.tissues.length} by species</span></div>
         <GroupTable rows={ov.tissues} label="Tissue / cell type" clickable />

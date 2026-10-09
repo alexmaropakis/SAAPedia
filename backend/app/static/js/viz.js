@@ -432,6 +432,79 @@ function Alignment({ saap, sequence }) {
   );
 }
 
+/* ------------------------- Substitution matrix ------------------------- */
+// Residues grouped by side-chain chemistry, so related swaps sit together.
+const MATRIX_ORDER = "GAVLIMPFWYSTCNQDEKRH";
+const MATRIX_GROUPS = [[0, 7, "Hydrophobic"], [7, 10, "Aromatic"], [10, 15, "Polar"], [15, 17, "Acidic"], [17, 20, "Basic"]];
+
+function SubstitutionMatrix({ data, onSelect }) {
+  const [hover, setHover] = useState(null);
+  const wrap = useRef();
+  if (!data) return <Loading />;
+  const aa = MATRIX_ORDER.split("");
+  const n = (r, a) => (data.counts[r] && data.counts[r][a]) || 0;
+  const max = Math.max(1, ...aa.flatMap((r) => aa.map((a) => n(r, a))));
+  const t = (v) => Math.log1p(v) / Math.log1p(max);  // log scale: H->D dwarfs everything else
+  const mix = (f) => `color-mix(in oklab, var(--accent) ${Math.round(12 + 88 * f)}%, var(--surface))`;
+
+  // Geometry: 26px cells, an 8px gutter between chemical classes.
+  const C = 22, G = 8, L = 178, T = 92;
+  const group = (i) => MATRIX_GROUPS.findIndex(([s, e]) => i >= s && i < e);
+  const pos = (i) => i * C + group(i) * G;
+  const span = pos(19) + C;
+  const legendX = L + span + 30, W = legendX + 100, H = T + span + 12;
+  const ticks = [1, 10, 100, 1000, 10000].filter((v) => v < max * 0.8).concat([max]);
+  const ty = (v) => T + span - t(v) * span;
+  const hoverAt = (e, r, a, v) => {
+    const box = wrap.current.getBoundingClientRect();
+    setHover({ r, a, v, x: e.clientX - box.left, y: e.clientY - box.top });
+  };
+
+  return (
+    <div className="matrix" ref={wrap} onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ maxWidth: W }}>
+        <defs>
+          <linearGradient id="mx-ramp" x1="0" y1="1" x2="0" y2="0">
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => <stop key={f} offset={f} style={{ stopColor: mix(f) }} />)}
+          </linearGradient>
+        </defs>
+        {/* axis titles */}
+        <text className="mx-title" x={L + span / 2} y={16}>Substituted residue</text>
+        <text className="mx-title" transform={`translate(14 ${T + span / 2}) rotate(-90)`}>Reference residue</text>
+        {/* class names and residue letters */}
+        {MATRIX_GROUPS.map(([s, e, name]) => (
+          <Fragment key={name}>
+            <text className="mx-group" x={L + (pos(s) + pos(e - 1) + C) / 2} y={44}>{name}</text>
+            <line className="mx-bracket" x1={L + pos(s) + 2} x2={L + pos(e - 1) + C - 2} y1={52} y2={52} />
+            <text className="mx-group left" x={L - 42} y={T + (pos(s) + pos(e - 1) + C) / 2 + 5}>{name}</text>
+            <line className="mx-bracket" x1={L - 32} x2={L - 32} y1={T + pos(s) + 2} y2={T + pos(e - 1) + C - 2} />
+          </Fragment>
+        ))}
+        {aa.map((a, j) => <text key={"c" + a} className="mx-axis" x={L + pos(j) + C / 2} y={T - 12}>{a}</text>)}
+        {aa.map((r, i) => <text key={"r" + r} className="mx-axis" x={L - 15} y={T + pos(i) + C / 2 + 5}>{r}</text>)}
+        {/* cells */}
+        {aa.map((r, i) => aa.map((a, j) => {
+          const v = n(r, a), diag = r === a;
+          return <rect key={r + a} x={L + pos(j) + 1} y={T + pos(i) + 1} width={C - 2} height={C - 2} rx={3}
+                       className={"mx-cell" + (diag ? " diag" : v ? " has" : "")} style={diag ? null : { fill: v ? mix(t(v)) : "var(--surface-2)" }}
+                       onMouseMove={(e) => !diag && hoverAt(e, r, a, v)}
+                       onClick={() => !diag && v && onSelect && onSelect(r, a)} />;
+        }))}
+        {/* legend: vertical log-scale bar beside the matrix */}
+        <rect x={legendX} y={T} width={16} height={span} rx={4} fill="url(#mx-ramp)" />
+        {ticks.map((v) => (
+          <Fragment key={v}>
+            <line className="mx-tick" x1={legendX + 16} x2={legendX + 22} y1={ty(v)} y2={ty(v)} />
+            <text className="mx-legend-label" x={legendX + 27} y={ty(v) + 4.5}>{v.toLocaleString()}</text>
+          </Fragment>
+        ))}
+        <text className="mx-title" transform={`translate(${legendX + 90} ${T + span / 2}) rotate(90)`}># SAAPs</text>
+      </svg>
+      {hover && <div className="tip" style={{ left: hover.x + 14, top: hover.y + 14 }}><b>{hover.r} → {hover.a}</b> · {plural(hover.v, "SAAP")}</div>}
+    </div>
+  );
+}
+
 /* ------------------------------- Small ------------------------------- */
 function MiniMap({ length, positions, width = 160 }) {
   if (!length) return DASH;

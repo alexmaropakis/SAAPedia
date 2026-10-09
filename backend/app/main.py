@@ -47,7 +47,7 @@ def _startup():
 # --- filters -----------------------------------------------------------------
 _STR_FILTERS = {"q", "tissue", "digest", "species", "acquisition_type", "aa_sub"} | ({"dataset"} if PRIVATE else set())
 _BOOL_FILTERS = {"trypsin", "missed_cleavage", "aas_at_peptide_terminus",
-                 "greater_than_shared", "at_cleavage_site", "in_gnomad"}
+                 "greater_than_shared", "at_cleavage_site", "in_gnomad", "cross_species"}
 _NUM_FILTERS = {"min_pos_prob", "max_pep"}
 
 
@@ -197,6 +197,22 @@ def protein_annotations(accession: str, db: Session = Depends(get_db)):
     return result
 
 
+@app.get("/api/proteins/{accession}/function")
+def protein_function(accession: str):
+    """UniProt function, subcellular location, GO terms and Reactome pathways."""
+    _check_accession(accession)
+    try:
+        return external.uniprot_function(accession)
+    except external.ExternalError as exc:
+        raise HTTPException(502, f"UniProt unavailable: {exc}") from exc
+
+
+@app.get("/api/substitutions")
+def substitutions(species: str | None = None, tissue: str | None = None, db: Session = Depends(get_db)):
+    """Substitution matrix: distinct SAAP per reference -> substituted residue."""
+    return investigate.substitution_matrix(db, species=species, tissue=tissue)
+
+
 @app.get("/api/proteins/{accession}/structure.pdb", response_class=PlainTextResponse)
 def protein_structure(accession: str):
     _check_accession(accession)
@@ -298,6 +314,7 @@ _ROLLUP_COLUMNS = [
     ("proteome_hits", "Encoded by (reference proteome)"),
     ("gnomad_status", "gnomAD"), ("gnomad_af", "gnomAD AF (same substitution)"),
     ("known_variant", "UniProt natural variant (same substitution)"),
+    ("cross_species", "Recurs in other species"), ("cross_species_detail", "Other-species match"),
 ]
 
 _PAIR_COLUMNS = [

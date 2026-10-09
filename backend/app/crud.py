@@ -52,7 +52,7 @@ def _aggregate_subquery():
 def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, tissue=None, digest=None, species=None,
                    acquisition_type=None, aa_sub=None, immunoglobulin=None, trypsin=None,
                    missed_cleavage=None, aas_at_peptide_terminus=None, greater_than_shared=None,
-                   at_cleavage_site=None, in_gnomad=None, min_pos_prob=None,
+                   at_cleavage_site=None, in_gnomad=None, cross_species=None, min_pos_prob=None,
                    max_pep=None) -> Select:
     if q:
         like = f"%{q}%"
@@ -110,6 +110,9 @@ def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, tissue=None, dige
             SAAP.protein_sequence, SAAP.position_in_protein, agg.c.digests, SAAP.aa_sub
         )
         stmt = stmt.where(expr == 1) if at_cleavage_site else stmt.where(or_(expr == 0, expr.is_(None)))
+    if cross_species is not None:  # True: same substitution recurs in the other species
+        stmt = stmt.where(SAAP.cross_species == "same") if cross_species else stmt.where(
+            or_(SAAP.cross_species != "same", SAAP.cross_species.is_(None)))
     if in_gnomad is not None:
         stmt = stmt.where(SAAP.gnomad_status == ("present" if in_gnomad else "absent"))
     if min_pos_prob is not None:
@@ -165,6 +168,8 @@ def _row_to_dict(row) -> dict:
             default=None),
         "proteome_hits": saap.proteome_hits,
         "gnomad_status": saap.gnomad_status,
+        "cross_species": saap.cross_species,
+        "cross_species_detail": saap.cross_species_detail,
         "gnomad_af": saap.gnomad_af,
         "max_evidence_fragments": agg["max_evidence_fragments"],
     }
@@ -485,6 +490,7 @@ def stats(db: Session):
         "n_saap": db.scalar(select(func.count(SAAP.id))) or 0,
         "n_observations": db.scalar(select(func.count(Observation.id))) or 0,
         "n_tissues": db.scalar(select(func.count(distinct(Observation.tissue)))) or 0,
+        "n_cross_species": db.scalar(select(func.count(SAAP.id)).where(SAAP.cross_species == "same")) or 0,
         "private": PRIVATE,
         "n_genes": db.scalar(select(func.count(distinct(SAAP.source_gene)))) or 0,
         "n_proteins": db.scalar(select(func.count(distinct(SAAP.protein_accession)))) or 0,
