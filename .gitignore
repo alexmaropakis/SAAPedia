@@ -1,1 +1,18 @@
 utility/
+
+# Cached UniProt / AlphaFold responses
+backend/.cache/
+
+# Reference proteome FASTAs for the local proteome match (large; supply your own)
+backend/reference/
+
+# Local environment and OS/editor clutter
+backend/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# SQLite side files and backups (checkpoint the database before committing)
+backend/saap.db-wal
+backend/saap.db-shm
+*.db.bak*

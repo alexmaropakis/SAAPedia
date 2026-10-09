@@ -45,6 +45,10 @@ class SAAP(Base):
     # to emit full-length protein entries (with the substitution applied in
     # place) rather than bare peptides — see fasta.py `entry_mode="protein"`.
     protein_sequence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # The UniProt accession (isoform-specific when applicable) that
+    # protein_sequence was taken from — the key SAAPs are grouped by in the
+    # protein views, and what AlphaFold / UniProt features are looked up with.
+    protein_accession: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     # 1-based index of the substituted residue within the full protein, and the
     # 1-based offset of the peptide's first residue. Both derived by locating
     # bp_seq in the canonical protein sequence. When the peptide occurs more
@@ -56,6 +60,24 @@ class SAAP(Base):
     peptide_starts_all: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # How many times bp_seq occurs in the protein (1 for the normal case).
     n_positions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Reference-proteome accessions whose sequence already contains the
+    # substituted peptide (I = L), comma-separated; "" = none, NULL = unchecked.
+    # A hit means the "substitution" is genome-encoded elsewhere (see proteome.py).
+    proteome_hits: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # gnomAD v4 population check (see gnomad.py): "absent" / "present" /
+    # "unmapped" (no Ensembl transcript identical to the protein); NULL =
+    # not checked (e.g. non-human). gnomad_af sums every variant producing
+    # this exact substitution; gnomad_variants lists their gnomAD IDs.
+    # UniProt natural variants producing this exact substitution ("VAR_xxx,..."),
+    # "" = none, NULL = not checked (no UniProt entry matching the sequence).
+    known_variant: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gnomad_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    gnomad_af: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gnomad_variants: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Best positional probability for this SAAP in the original source tables
+    # (Project_AAS processed data, Tsour et al.), for observations imported
+    # without one. Combined with the observations' own values in rollups.
+    source_positional_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Provenance for the annotation: e.g. "file", "uniprot", or "uniprot:unmatched".
     annotation_source: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 

@@ -12,6 +12,8 @@ from pathlib import Path
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+from .cleavage import is_cleavage_position_any
+
 # Default: a file next to the backend package. Override with SAAP_DB_PATH.
 _DEFAULT_DB = Path(__file__).resolve().parent.parent / "saap.db"
 DB_PATH = Path(os.environ.get("SAAP_DB_PATH", str(_DEFAULT_DB)))
@@ -23,6 +25,12 @@ engine = create_engine(
 )
 
 
+def _sql_at_cleavage_site(protein_sequence, position_in_protein, digests_csv, aa_sub):
+    """SQLite UDF wrapper: 1/0/NULL so it composes in a WHERE clause."""
+    result = is_cleavage_position_any(protein_sequence, position_in_protein, digests_csv, aa_sub)
+    return None if result is None else int(result)
+
+
 @event.listens_for(engine, "connect")
 def _set_sqlite_pragmas(dbapi_conn, _record):
     cur = dbapi_conn.cursor()
@@ -30,6 +38,9 @@ def _set_sqlite_pragmas(dbapi_conn, _record):
     cur.execute("PRAGMA busy_timeout=30000;")   # wait rather than error under contention
     cur.execute("PRAGMA foreign_keys=ON;")
     cur.close()
+    # Exposes cleavage.is_cleavage_position_any() as saap_at_cleavage_site(...)
+    # inside SQL, so it can be used directly in a WHERE clause (see crud.py).
+    dbapi_conn.create_function("saap_at_cleavage_site", 4, _sql_at_cleavage_site)
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -52,10 +63,10 @@ def _auto_add_columns():
     """Additive migration: add any model columns missing from existing tables.
 
     SQLite's create_all never alters existing tables, so when the schema gains a
-    new nullable column (e.g. `digest`), this adds it in place without dropping
+    new nullable column it is added in place (with its index) without dropping
     data. Only handles additions — not renames/drops/type changes.
     """
-    from . import models  # noqa: F401
+    from . import models  # noqa: F401  (registers the tables)
 
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
@@ -70,6 +81,8 @@ def _auto_add_columns():
                     conn.execute(text(
                         f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_type}'
                     ))
+            for index in table.indexes:
+                index.create(conn, checkfirst=True)
 
 
 def init_db():

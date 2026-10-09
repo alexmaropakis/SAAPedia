@@ -5,10 +5,11 @@ import csv
 import hashlib
 import io
 from dataclasses import dataclass, field
-from sqlalchemy import delete as sa_delete, func
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from . import column_map
+from .curate import prune
+from .proteome import check_all
 from .models import Observation, SAAP
 from .util import normalize_dataset, normalize_species
 
@@ -28,6 +29,8 @@ class IngestResult:
     columns_mapped: dict[str, str] = field(default_factory=dict)
     columns_unmapped: list[str] = field(default_factory=list)
     saap_pending_uniprot: int = 0
+    rows_skipped_immunoglobulin: int = 0
+    curation: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
@@ -146,12 +149,6 @@ def _saap_identities(record: dict) -> list[tuple[str, str, str]]:
     return list(dict.fromkeys(out))
 
 
-def _saap_identity(record: dict) -> tuple[str, str, str] | None:
-    # First identity for a row, or None. Kept for callers wanting a single key
-    ids = _saap_identities(record)
-    return ids[0] if ids else None
-
-
 def _cell_to_str(v) -> str:
     """
     Function to normalize an XLSX cell value to the string form our parsers expect.
@@ -235,6 +232,9 @@ def ingest_file(
         for raw_header, canonical in mapping.items():
             record[canonical] = raw_row.get(raw_header)
 
+        if _to_bool(record.get("immunoglobulin")):
+            result.rows_skipped_immunoglobulin += 1
+            continue
         identities = _saap_identities(record)
         if not identities:
             result.rows_skipped_no_identity += 1
@@ -243,73 +243,75 @@ def ingest_file(
         # A row listing several substituted peptides becomes several SAAPs,
         # each getting its own observation from this row
         for identity in identities:
-          saap = saap_cache.get(identity)
-          if saap is None:
-              saap = db.scalar(
-                  select(SAAP).where(
-                      SAAP.mtp_seq == identity[0],
-                      SAAP.bp_seq == identity[1],
-                      SAAP.aa_sub == identity[2],
-                  )
-              )
-              if saap is None:
-                  saap = SAAP(
-                      mtp_seq=identity[0],
-                      bp_seq=identity[1],
-                      aa_sub=identity[2],
-                      source_accession=_clean_str(record.get("source_accession")),
-                      source_gene=_clean_str(record.get("source_gene")),
-                      ref_proteins=_clean_str(record.get("ref_proteins")),
-                      ensembl_gene=_clean_str(record.get("ensembl_gene")),
-                      ensembl_transcript=_clean_str(record.get("ensembl_transcript")),
-                      ensembl_protein=_clean_str(record.get("ensembl_protein")),
-                      protein_description=_clean_str(record.get("protein_description")),
-                      protein_length=_to_int(record.get("protein_length")),
-                      position_in_protein=_to_int(record.get("position_in_protein")),
-                      peptide_start=_to_int(record.get("peptide_start")),
-                      annotation_source=("file" if _clean_str(record.get("ensembl_gene"))
-                                         or _clean_str(record.get("position_in_protein"))
-                                         else None),
-                      immunoglobulin=_to_bool(record.get("immunoglobulin")),
-                      trypsin=_to_bool(record.get("trypsin")),
-                      missed_cleavage=_to_bool(record.get("missed_cleavage")),
-                      aas_at_peptide_terminus=_to_bool(record.get("aas_at_peptide_terminus")),
-                      greater_than_shared=_to_bool(record.get("greater_than_shared")),
-                  )
-                  db.add(saap)
-                  db.flush()  # assign PK
-                  result.saap_created += 1
-              else:
-                  # Backfill source metadata if the existing row lacks it
-                  _backfill_source(saap, record)
-              saap_cache[identity] = saap
-          else:
-              _backfill_source(saap, record)
+            saap = saap_cache.get(identity)
+            if saap is None:
+                saap = db.scalar(
+                    select(SAAP).where(
+                        SAAP.mtp_seq == identity[0],
+                        SAAP.bp_seq == identity[1],
+                        SAAP.aa_sub == identity[2],
+                    )
+                )
+                if saap is None:
+                    saap = SAAP(
+                        mtp_seq=identity[0],
+                        bp_seq=identity[1],
+                        aa_sub=identity[2],
+                        source_accession=_clean_str(record.get("source_accession")),
+                        source_gene=_clean_str(record.get("source_gene")),
+                        ref_proteins=_clean_str(record.get("ref_proteins")),
+                        ensembl_gene=_clean_str(record.get("ensembl_gene")),
+                        ensembl_transcript=_clean_str(record.get("ensembl_transcript")),
+                        ensembl_protein=_clean_str(record.get("ensembl_protein")),
+                        protein_description=_clean_str(record.get("protein_description")),
+                        protein_length=_to_int(record.get("protein_length")),
+                        position_in_protein=_to_int(record.get("position_in_protein")),
+                        peptide_start=_to_int(record.get("peptide_start")),
+                        annotation_source=("file" if _clean_str(record.get("ensembl_gene"))
+                                           or _clean_str(record.get("position_in_protein"))
+                                           else None),
+                        immunoglobulin=_to_bool(record.get("immunoglobulin")),
+                        trypsin=_to_bool(record.get("trypsin")),
+                        missed_cleavage=_to_bool(record.get("missed_cleavage")),
+                        aas_at_peptide_terminus=_to_bool(record.get("aas_at_peptide_terminus")),
+                        greater_than_shared=_to_bool(record.get("greater_than_shared")),
+                    )
+                    db.add(saap)
+                    db.flush()  # assign PK
+                    result.saap_created += 1
+                else:
+                    # Backfill source metadata if the existing row lacks it
+                    _backfill_source(saap, record)
+                saap_cache[identity] = saap
+            else:
+                _backfill_source(saap, record)
 
-          row_hash = _hash_row(identity, record)
-          if row_hash in seen_hashes or db.scalar(
-              select(Observation.id).where(Observation.row_hash == row_hash)
-          ) is not None:
-              result.duplicate_observations_skipped += 1
-              continue
-          seen_hashes.add(row_hash)
+            row_hash = _hash_row(identity, record)
+            if row_hash in seen_hashes or db.scalar(
+                select(Observation.id).where(Observation.row_hash == row_hash)
+            ) is not None:
+                result.duplicate_observations_skipped += 1
+                continue
+            seen_hashes.add(row_hash)
 
-          db.add(Observation(
-              saap_id=saap.id,
-              dataset=normalize_dataset(_clean_str(record.get("dataset"))),
-              tmt_tissue=_clean_str(record.get("tmt_tissue")),
-              digest=_clean_str(record.get("digest")),
-              species=normalize_species(_clean_str(record.get("species"))),
-              acquisition_type=_clean_str(record.get("acquisition_type")),
-              saap_pep=_to_float(record.get("saap_pep")),
-              positional_probability=_to_float(record.get("positional_probability")),
-              n_evidence_fragments=_to_int(record.get("n_evidence_fragments")),
-              source_file=filename,
-              row_hash=row_hash,
-          ))
-          result.observations_created += 1
+            db.add(Observation(
+                saap_id=saap.id,
+                dataset=normalize_dataset(_clean_str(record.get("dataset"))),
+                tmt_tissue=_clean_str(record.get("tmt_tissue")),
+                digest=_clean_str(record.get("digest")),
+                species=normalize_species(_clean_str(record.get("species"))),
+                acquisition_type=_clean_str(record.get("acquisition_type")),
+                saap_pep=_to_float(record.get("saap_pep")),
+                positional_probability=_to_float(record.get("positional_probability")),
+                n_evidence_fragments=_to_int(record.get("n_evidence_fragments")),
+                source_file=filename,
+                row_hash=row_hash,
+            ))
+            result.observations_created += 1
 
     db.commit()
+    result.curation = prune(db)
+    check_all(db)
 
     # SAAPs without a UniProt accession are KEPT. They carry a gene name and/or
     # protein description, which the annotation step resolves to an accession
@@ -324,22 +326,6 @@ def count_saap_without_uniprot(db: Session) -> int:
         select(func.count(SAAP.id)).where(or_(SAAP.source_accession.is_(None),
                                               SAAP.source_accession == ""))
     ) or 0
-
-
-def cleanup_saap_without_uniprot(db: Session) -> int:
-    # Function to delete SAAP that have no UniProt accession
-    # Function is dead but kept to call upon for manual cleanup
-    victims = db.scalars(
-        select(SAAP.id).where(or_(SAAP.source_accession.is_(None),
-                                  SAAP.source_accession == ""))
-    ).all()
-    if not victims:
-        return 0
-    victim_list = list(victims)
-    db.execute(sa_delete(Observation).where(Observation.saap_id.in_(victim_list)))
-    db.execute(sa_delete(SAAP).where(SAAP.id.in_(victim_list)))
-    db.commit()
-    return len(victim_list)
 
 
 def _backfill_source(saap: SAAP, record: dict) -> None:

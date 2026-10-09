@@ -17,6 +17,19 @@ because annotation could not run.
 
 Values already present from the imported file are never overwritten by a lookup
 (file columns win; see `annotate_saaps(overwrite=False)`).
+
+References
+----------
+Dyer, S. C., Austine-Orimoloye, O., Azov, A. G., Barba, M., Barnes, I.,
+    Barrera-Enriquez, V. P., Becker, A., Bennett, R., Beracochea, M., Berry,
+    A., Bhai, J., Bhurji, S. K., Boddu, S., Branco Lins, P. R., Brooks, L.,
+    Ramaraju, S. B., Campbell, L. I., Martinez, M. C., Charkhchi, M., . . .
+    Yates, A. D. (2025). Ensembl 2025. Nucleic Acids Research, 53(D1),
+    D948–D957. https://doi.org/10.1093/nar/gkae1071
+
+The UniProt Consortium. (2025). UniProt: The Universal Protein Knowledgebase in
+    2025. Nucleic Acids Research, 53(D1), D609–D617.
+    https://doi.org/10.1093/nar/gkae1010
 """
 
 from __future__ import annotations
@@ -25,7 +38,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 from .models import SAAP
 
@@ -58,7 +71,7 @@ NEEDS_ANNOTATION = and_(
         SAAP.aa_sub == ""),
     or_(SAAP.annotation_source.is_(None),
         SAAP.annotation_source == "",
-        SAAP.annotation_source == "peptide-match",
+        SAAP.annotation_source.in_(("peptide-match", "reference-match", "fragpipe-razor")),
         SAAP.annotation_source.like("%-error")),
 )
 
@@ -93,9 +106,12 @@ class AnnotationResult:
     no_identifier: int = 0       # neither accession nor gene -> unresolvable
     resolved_by_peptide: int = 0 # identifiers copied from a known base peptide
     resolved_by_sequence: int = 0 # protein found by searching the peptide sequence
+    resolved_by_reference: int = 0  # base peptide located in the local reference proteome
     species_corrected: int = 0   # annotation re-resolved into the right species
     aas_filled: int = 0          # AAS string derived from the peptide pair
     merged_duplicates: int = 0   # empty shells folded into an existing SAAP
+    curation: dict = field(default_factory=dict)  # rows removed by curate.prune
+    gnomad: dict = field(default_factory=dict)    # gnomad.check_all summary
     unmatched_examples: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -169,25 +185,8 @@ def locate_peptide_all(protein_seq: str | None, bp_seq: str | None) -> list[int]
     return _scan(prot.replace("I", "L"), pep.replace("I", "L"))
 
 
-def locate_peptide(protein_seq: str | None, bp_seq: str | None) -> Optional[int]:
-    """1-based start of `bp_seq`, or None when absent.
-
-    Returns the first occurrence; use `locate_peptide_all` when every site
-    matters. Kept for callers that need a single number.
-    """
-    hits = locate_peptide_all(protein_seq, bp_seq)
-    return hits[0] if hits else None
-
-
 def contains_peptide(protein_seq: str | None, bp_seq: str | None) -> bool:
-    """Whether the protein contains this peptide at all.
-
-    Distinct from `locate_peptide`, which yields a position only when the
-    peptide occurs exactly once. A peptide repeated within a protein (common in
-    collagens and other repeat-rich sequences) still identifies that protein
-    correctly — we just cannot say which copy carries the substitution. Used to
-    accept a protein match while leaving the position blank.
-    """
+    """Whether the protein contains this peptide at all (I/L-insensitive)."""
     if not protein_seq or not bp_seq:
         return False
     prot, pep = protein_seq.upper(), bp_seq.upper()
@@ -213,12 +212,6 @@ def compute_positions(protein_seq: str | None, saap: SAAP) -> tuple[list[int], l
     if offset is None:
         return (starts, [])
     return (starts, [s + offset for s in starts])
-
-
-def compute_position(protein_seq: str | None, saap: SAAP) -> tuple[Optional[int], Optional[int]]:
-    """First (peptide_start, position_in_protein), or (None, None)."""
-    starts, positions = compute_positions(protein_seq, saap)
-    return (starts[0] if starts else None, positions[0] if positions else None)
 
 
 # - UniProt client -
@@ -357,17 +350,6 @@ def _accession_candidates(value: str | None) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def _base_accession(value: str | None) -> str:
-    """First accession of a possibly ';'-separated list, minus any isoform suffix."""
-    if not value:
-        return ""
-    for part in value.split(";"):
-        part = part.strip()
-        if part:
-            return part.split("-")[0]
-    return ""
-
-
 def gene_species(gene: str | None) -> str | None:
     """'homo sapiens' / 'mus musculus' implied by a gene symbol's casing.
 
@@ -377,6 +359,8 @@ def gene_species(gene: str | None) -> str | None:
     g = (gene or "").split(";")[0].strip()
     if not g:
         return None
+    if re.fullmatch(r"C(\d+|X|Y)orf\d+[A-Z]?", g):
+        return "homo sapiens"  # human open-reading-frame symbols (mouse uses e.g. 1110001J03Rik)
     if re.fullmatch(r"[A-Z0-9][A-Z0-9-]*", g) and not re.fullmatch(r"[A-Z][a-z].*", g):
         return "homo sapiens"
     if re.fullmatch(r"[A-Z][a-z0-9][A-Za-z0-9-]*", g):
@@ -446,13 +430,8 @@ def _saap_species_name(db: Session, saap: SAAP) -> str | None:
 
 
 def _saap_organism(db: Session, saap: SAAP) -> str | None:
-    """NCBI taxon id for a SAAP, from its own observations.
-
-    The database mixes species (human and mouse here), so a single global
-    organism filter would send mouse genes to human entries. Each SAAP is
-    resolved against the species carrying most of its observations; when two
-    species tie, no filter is applied rather than picking one arbitrarily.
-    """
+    """NCBI taxon id for the species a SAAP is annotated against
+    (see `_saap_species_name`), or None for an unrecognized species."""
     name = _saap_species_name(db, saap)
     return TAXA.get(name) if name else None
 
@@ -499,7 +478,40 @@ def apply_record(saap: SAAP, rec: ProteinRecord, *, overwrite: bool = False) -> 
     _set("peptide_starts_all", ",".join(str(x) for x in starts) if starts else None)
     _set("positions_all", ",".join(str(x) for x in positions) if positions else None)
     _set("n_positions", len(positions) if positions else (len(starts) or None))
+    # Only claim the accession when the cached sequence really is this record's.
+    if rec.accession and saap.protein_sequence == rec.sequence \
+            and saap.protein_accession != rec.accession:
+        saap.protein_accession = rec.accession
+        changed = True
     return changed
+
+
+def backfill_protein_accessions(db: Session) -> int:
+    """Set `protein_accession` on rows annotated before that column existed.
+
+    The cached sequence may come from any accession listed in source_accession
+    (or its isoform/canonical form), so each candidate is fetched and the one
+    whose sequence is identical is recorded. Rows with no identical candidate
+    stay NULL. Returns the number of rows updated.
+    """
+    rows = db.scalars(select(SAAP).where(
+        SAAP.protein_sequence.is_not(None), SAAP.protein_accession.is_(None))).all()
+    if not rows:
+        return 0
+    cands = {a for s in rows for a in _accession_candidates(s.source_accession)}
+    records, _ = fetch_uniprot([a for a in cands if "-" not in a])
+    iso, _ = fetch_isoforms([a for a in cands if "-" in a])
+    records.update(iso)
+    updated = 0
+    for s in rows:
+        for acc in _accession_candidates(s.source_accession):
+            rec = records.get(acc)
+            if rec and rec.sequence == s.protein_sequence:
+                s.protein_accession = rec.accession
+                updated += 1
+                break
+    db.commit()
+    return updated
 
 
 def fetch_uniprot_by_gene(
@@ -719,8 +731,8 @@ def _peptide_search_job(
     """Run one Peptide Search job and return the matched accessions.
 
     POST -> 202 with a job Location -> poll until 200 (the service answers 303
-    with Retry-After while the job is still running). Returns [] if the job
-    yields nothing within `max_polls`.
+    with Retry-After while the job is still running). Raises requests.Timeout
+    if the job does not finish within `max_polls`.
     """
     data = {"peps": peptide, "lEQi": "on"}
     if organism_id:
@@ -738,8 +750,15 @@ def _peptide_search_job(
         body = (resp.text or "").strip()
         return [a for a in body.split(",") if a] if body else []
 
+    import requests  # noqa: PLC0415
+
+    # The service hands back plain-http job URLs that intermittently hang.
+    job_url = job_url.replace("http://", "https://", 1)
     for _ in range(max_polls):
-        job = sess.get(job_url, timeout=timeout, allow_redirects=False)
+        try:
+            job = sess.get(job_url, timeout=timeout, allow_redirects=False)
+        except requests.Timeout:
+            continue  # a hung poll is not an answer; ask again
         if job.status_code == 200:
             body = (job.text or "").strip()
             return [a for a in body.split(",") if a] if body else []
@@ -749,8 +768,8 @@ def _peptide_search_job(
             time.sleep(min(float(wait), 10.0) if wait and str(wait).isdigit() else poll_wait)
             continue
         job.raise_for_status()
-        break
-    return []
+    # Never report "no match" for a job that simply did not finish.
+    raise requests.Timeout(f"peptide search for {peptide} did not finish")
 
 
 def stored_positions(saap: SAAP) -> list[int]:
@@ -813,53 +832,6 @@ def apply_substitutions_all(saap: SAAP) -> tuple[list[tuple[int, str]], Optional
     if not out:
         return ([], skipped[0] if skipped else "no usable position")
     return (out, None)
-
-
-def apply_substitution(saap: SAAP) -> tuple[Optional[str], Optional[str]]:
-    """Build the full-length protein sequence carrying this SAAP's substitution.
-
-    Returns (variant_sequence, error). Exactly one of the two is set.
-
-    The residue at `position_in_protein` is replaced with the substituted amino
-    acid. Before writing, the residue currently at that position is checked
-    against what the substitution says should be there — a mismatch means the
-    position and the sequence disagree (wrong isoform, stale annotation), so the
-    entry is skipped rather than silently emitting a wrong protein.
-
-    The substituted residue is taken from the SAAP/BP comparison where possible
-    and from the AAS column otherwise, mirroring how the position was derived.
-    """
-    seq = saap.protein_sequence
-    pos = saap.position_in_protein
-    if not seq:
-        return (None, "no cached protein sequence — run annotation first")
-    if pos is None:
-        # Several candidate peptides place the substitution at different
-        # positions, so there is no single residue to change.
-        from .ingest import _split_peptides
-
-        if len(_split_peptides(saap.mtp_seq or "")) > 1:
-            return (None, "ambiguous: alternative peptides give different positions")
-        return (None, "no position in protein")
-    if pos < 1 or pos > len(seq):
-        return (None, f"position {pos} outside protein (length {len(seq)})")
-
-    frm, to = parse_substitution(saap.aa_sub)
-    # Prefer the actual peptide comparison; it reflects the observed data.
-    offset = substitution_offset(saap.bp_seq, saap.mtp_seq)
-    if offset is not None:
-        frm = (saap.bp_seq or "")[offset].upper()
-        to = (saap.mtp_seq or "")[offset].upper()
-    if not to:
-        return (None, f"cannot determine substituted residue from AAS {saap.aa_sub!r}")
-
-    actual = seq[pos - 1].upper()
-    if frm and actual != frm:
-        # I/L are isobaric, so treat them as interchangeable before rejecting.
-        if not (actual in "IL" and frm in "IL"):
-            return (None, f"residue at {pos} is {actual!r}, substitution expects {frm!r}")
-
-    return (seq[:pos - 1] + to + seq[pos:], None)
 
 
 def _merge_duplicate(db: Session, saap: SAAP, aa_sub: str) -> bool:
@@ -1060,6 +1032,10 @@ def annotate_saaps(
     # Rows imported without gene/UniProt columns: copy identifiers from the same
     # base peptide elsewhere in the database before spending any network calls.
     result.resolved_by_peptide = resolve_from_database(db, saaps)
+    # Then the local reference proteome (instant), before any remote search.
+    from .proteome import resolve_unidentified
+    result.resolved_by_reference = resolve_unidentified(
+        db, saaps, lambda s: [n] if (n := _saap_species_name(db, s)) else [])
 
     by_acc: dict[str, list[SAAP]] = {}
     by_gene: dict[str, list[SAAP]] = {}
@@ -1242,4 +1218,14 @@ def annotate_saaps(
                     s.annotation_source = "uniprot:peptide-unmatched"
 
     db.commit()
+    backfill_protein_accessions(db)
+    from .curate import prune  # local imports: avoid a cycle via models
+    from .proteome import check_all
+    from . import gnomad
+    check_all(db)
+    try:
+        result.gnomad = gnomad.check_all(db)
+    except Exception as exc:  # never fail annotation over the population check
+        result.errors.append(f"gnomAD: {exc}")
+    result.curation = prune(db)
     return result

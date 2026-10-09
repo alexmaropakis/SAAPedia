@@ -5,6 +5,8 @@ from sqlalchemy import Select, and_, case, distinct, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from .annotate import NEEDS_ANNOTATION
+from .cleavage import is_cleavage_position_any
+from .curate import best_positional_probability
 from .models import Observation, SAAP
 
 # Sort keys the API accepts.
@@ -12,7 +14,7 @@ SORTABLE = {
     "mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession",
     "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein",
     "n_observations", "n_datasets", "best_saap_pep", "max_positional_probability",
-    "max_evidence_fragments",
+    "max_evidence_fragments", "gnomad_af",
 }
 
 # Aggregate columns, in a fixed order, exposed on the subquery.
@@ -49,7 +51,8 @@ def _aggregate_subquery():
 def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, digest=None, species=None,
                    acquisition_type=None, aa_sub=None, immunoglobulin=None, trypsin=None,
                    missed_cleavage=None, aas_at_peptide_terminus=None, greater_than_shared=None,
-                   min_pos_prob=None, max_pep=None) -> Select:
+                   at_cleavage_site=None, in_gnomad=None, min_pos_prob=None,
+                   max_pep=None) -> Select:
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(
@@ -84,10 +87,29 @@ def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, digest=None, spec
         (aas_at_peptide_terminus, SAAP.aas_at_peptide_terminus),
         (greater_than_shared, SAAP.greater_than_shared),
     ):
-        if flag_val is not None:
-            stmt = stmt.where(col.is_(flag_val))
+        if flag_val is True:
+            stmt = stmt.where(col.is_(True))
+        elif flag_val is False:
+            # NULL means the source file never populated this column for that
+            # row (common — most datasets only set some of these flags), not
+            # "confirmed false". Treat it as "not flagged" rather than
+            # excluding it, so filtering to No doesn't silently drop rows that
+            # were simply never evaluated for this flag.
+            stmt = stmt.where(or_(col.is_(False), col.is_(None)))
+    if at_cleavage_site is not None:
+        # Computed live from protein_sequence + position_in_protein + digest
+        # (see cleavage.py) rather than a stored column — SQLite UDF registered
+        # in database.py. NULL means "not evaluable" (no protein/position, or
+        # an unrecognized digest); those rows are kept for both true and false
+        # so an unresolved case is never silently dropped.
+        expr = func.saap_at_cleavage_site(
+            SAAP.protein_sequence, SAAP.position_in_protein, agg.c.digests, SAAP.aa_sub
+        )
+        stmt = stmt.where(expr == 1) if at_cleavage_site else stmt.where(or_(expr == 0, expr.is_(None)))
+    if in_gnomad is not None:
+        stmt = stmt.where(SAAP.gnomad_status == ("present" if in_gnomad else "absent"))
     if min_pos_prob is not None:
-        stmt = stmt.where(agg.c.max_positional_probability >= min_pos_prob)
+        stmt = stmt.where(best_positional_probability(agg.c.max_positional_probability) >= min_pos_prob)
     if max_pep is not None:
         stmt = stmt.where(agg.c.best_saap_pep <= max_pep)
     return stmt
@@ -117,11 +139,15 @@ def _row_to_dict(row) -> dict:
         "positions_all": saap.positions_all,
         "n_positions": saap.n_positions,
         "protein_description": saap.protein_description,
+        "protein_accession": saap.protein_accession,
         "immunoglobulin": saap.immunoglobulin,
         "trypsin": saap.trypsin,
         "missed_cleavage": saap.missed_cleavage,
         "aas_at_peptide_terminus": saap.aas_at_peptide_terminus,
         "greater_than_shared": saap.greater_than_shared,
+        "at_cleavage_site": is_cleavage_position_any(
+            saap.protein_sequence, saap.position_in_protein, agg["digests"], saap.aa_sub
+        ),
         "n_observations": agg["n_observations"],
         "n_datasets": agg["n_datasets"],
         "datasets": _split(agg["datasets"]),
@@ -129,7 +155,12 @@ def _row_to_dict(row) -> dict:
         "species": _split(agg["species"]),
         "acquisition_types": _split(agg["acquisition_types"]),
         "best_saap_pep": agg["best_saap_pep"],
-        "max_positional_probability": agg["max_positional_probability"],
+        "max_positional_probability": max(
+            (v for v in (agg["max_positional_probability"], saap.source_positional_probability) if v is not None),
+            default=None),
+        "proteome_hits": saap.proteome_hits,
+        "gnomad_status": saap.gnomad_status,
+        "gnomad_af": saap.gnomad_af,
         "max_evidence_fragments": agg["max_evidence_fragments"],
     }
 
@@ -145,8 +176,10 @@ def list_saap(db: Session, *, sort="n_observations", order="desc", page=1, page_
     if sort not in SORTABLE:
         sort = "n_observations"
     if sort in {"mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession",
-                "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein"}:
+                "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein", "gnomad_af"}:
         sort_col = getattr(SAAP, sort)
+    elif sort == "max_positional_probability":
+        sort_col = best_positional_probability(agg.c[sort])
     else:
         sort_col = agg.c[sort]
     sort_col = sort_col.desc() if order == "desc" else sort_col.asc()
@@ -157,6 +190,14 @@ def list_saap(db: Session, *, sort="n_observations", order="desc", page=1, page_
 
     items = [_row_to_dict(row) for row in db.execute(stmt).all()]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def saap_cleavage_flag(saap: SAAP, observations: list[Observation]) -> bool | None:
+    """Same computed cleavage-site check as the Browse rollup (`at_cleavage_site`
+    in `_row_to_dict`), for the single-SAAP detail view — evaluated against the
+    digest(s) actually seen in `observations` rather than a pre-aggregated string."""
+    digests_csv = ",".join(sorted({o.digest for o in observations if o.digest}))
+    return is_cleavage_position_any(saap.protein_sequence, saap.position_in_protein, digests_csv, saap.aa_sub)
 
 
 def get_saap_detail(db: Session, saap_id: int):
@@ -395,10 +436,60 @@ def dataset_overview(db: Session) -> dict:
     }
 
 
+_PROTEIN_SORT = {"gene", "protein_accession", "length", "n_saap", "n_sites", "n_observations"}
+
+
+def list_proteins(db: Session, *, q=None, sort="n_saap", order="desc", page=1, page_size=50):
+    """One row per annotated protein (protein_accession), with its SAAP sites."""
+    n_obs = (select(Observation.saap_id, func.count(Observation.id).label("n"))
+             .group_by(Observation.saap_id).subquery())
+    cols = {
+        "protein_accession": SAAP.protein_accession,
+        "gene": func.min(SAAP.source_gene),
+        "description": func.min(SAAP.protein_description),
+        "length": func.max(SAAP.protein_length),
+        "n_saap": func.count(SAAP.id),
+        "n_sites": func.count(distinct(SAAP.position_in_protein)),
+        "n_observations": func.sum(n_obs.c.n),
+        "positions": func.group_concat(SAAP.position_in_protein),
+    }
+    stmt = (select(*[c.label(k) for k, c in cols.items()])
+            .join(n_obs, n_obs.c.saap_id == SAAP.id)
+            .where(SAAP.protein_accession.is_not(None))
+            .group_by(SAAP.protein_accession))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(SAAP.protein_accession.ilike(like), SAAP.source_gene.ilike(like),
+                              SAAP.protein_description.ilike(like)))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    key = sort if sort in _PROTEIN_SORT else "n_saap"
+    sort_col = cols[key].desc() if order == "desc" else cols[key].asc()
+    stmt = stmt.order_by(sort_col, SAAP.protein_accession).limit(page_size).offset((max(page, 1) - 1) * page_size)
+    items = []
+    for r in db.execute(stmt).mappings():
+        item = dict(r)
+        item["gene"] = (item["gene"] or "").split(";")[0] or None
+        item["positions"] = sorted({int(p) for p in (r["positions"] or "").split(",") if p})
+        items.append(item)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def protein_saaps(db: Session, accession: str) -> list[dict]:
+    """Rollup rows for every SAAP mapped to one protein, by position."""
+    agg = _aggregate_subquery()
+    stmt = (select(SAAP, *[agg.c[n] for n in _AGG_NAMES])
+            .join(agg, agg.c.saap_id == SAAP.id)
+            .where(SAAP.protein_accession == accession)
+            .order_by(SAAP.position_in_protein.is_(None), SAAP.position_in_protein, SAAP.id))
+    return [{**_row_to_dict(row), "peptide_start": row[0].peptide_start}
+            for row in db.execute(stmt).all()]
+
+
 def stats(db: Session):
     return {
         "n_saap": db.scalar(select(func.count(SAAP.id))) or 0,
         "n_observations": db.scalar(select(func.count(Observation.id))) or 0,
         "n_datasets": db.scalar(select(func.count(distinct(Observation.dataset)))) or 0,
         "n_genes": db.scalar(select(func.count(distinct(SAAP.source_gene)))) or 0,
+        "n_proteins": db.scalar(select(func.count(distinct(SAAP.protein_accession)))) or 0,
     }
