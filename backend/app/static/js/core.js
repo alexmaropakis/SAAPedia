@@ -144,7 +144,7 @@ const granthamClass = (g) => g == null ? "" : g <= 50 ? "Conservative" : g <= 10
 
 /* ------------------------------ routing ---------------------------- */
 function parseHash() {
-  const [path, query] = (location.hash.replace(/^#\/?/, "") || "browse").split("?");
+  const [path, query] = (location.hash.replace(/^#\/?/, "") || "home").split("?");
   const [page, param] = path.split("/");
   return { page, param: param ? decodeURIComponent(param) : null, query: new URLSearchParams(query || "") };
 }
@@ -203,6 +203,14 @@ const ICONS = {
   upload: "M12 21V9M7 14l5-5 5 5M5 3h14",
   spark: "M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8",
 };
+/** "SAAPedia" with SAAP in the accent; one letter, picked once per page load, is the "substitution". */
+const SUB_LETTER = Math.floor(Math.random() * 8);
+const Wordmark = () => (
+  <span className="wordmark">{[..."SAAPedia"].map((c, i) => (
+    <span key={i} className={i === SUB_LETTER ? "wm-sub" : i < 4 ? "wm-saap" : ""}>{c}</span>
+  ))}</span>
+);
+
 const Icon = ({ name }) => <svg className="i" viewBox="0 0 24 24"><path d={ICONS[name]} /></svg>;
 
 const Spinner = () => <span className="spin" />;

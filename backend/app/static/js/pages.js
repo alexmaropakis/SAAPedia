@@ -32,6 +32,117 @@ function annotateSummary(r) {
   return bits.join(" · ");
 }
 
+/* ================================ Home ================================ */
+const ACCESSION = /^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})(-\d+)?$/;
+
+/** Split-flap board: tiles flip through random residues, settle on a real base
+ *  peptide, then the substituted tile flips again to the SAAP residue. */
+const RESIDUES = "ACDEFGHIKLMNPQRSTVWY";
+const FALLBACK_PAIRS = [{ bp: "SAVTALWGK", saap: "SAVTALDGK" }];
+
+function FlapBoard() {
+  const [pairs, setPairs] = useState(FALLBACK_PAIRS);
+  const [frame, setFrame] = useState({ text: FALLBACK_PAIRS[0].saap, diff: 6, marked: true, settled: [] });
+  useEffect(() => {
+    api.list({ ...DEFAULT_FILTERS, sort: "n_observations", order: "desc", page_size: 60 }).then((d) => {
+      const ok = d.items.filter((r) => r.bp_seq && r.mtp_seq && r.bp_seq.length === r.mtp_seq.length && r.bp_seq.length <= 14
+        && [...r.bp_seq].filter((c, i) => c !== r.mtp_seq[i]).length === 1);
+      if (ok.length) setPairs(ok.map((r) => ({ bp: r.bp_seq, saap: r.mtp_seq })));
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const { bp, saap } = pairs[0];
+      setFrame({ text: saap, diff: [...bp].findIndex((c, i) => c !== saap[i]), marked: true, settled: [] });
+      return;
+    }
+    let n = 0, start = performance.now();
+    const rand = () => RESIDUES[Math.floor(Math.random() * RESIDUES.length)];
+    const tick = setInterval(() => {
+      const { bp, saap } = pairs[n % pairs.length];
+      const diff = [...bp].findIndex((c, i) => c !== saap[i]);
+      const t = performance.now() - start;
+      const settleAt = (i) => 250 + i * 110;          // phase 1: tiles land left to right
+      const flipStart = settleAt(bp.length) + 1100;   // phase 2: the substituted tile flips again
+      const flipEnd = flipStart + 650;
+      const done = flipEnd + 2400;
+      if (t > done) { n += 1; start = performance.now(); return; }
+      const text = [...bp].map((c, i) => {
+        if (t < settleAt(i)) return rand();
+        if (i === diff && t >= flipStart) return t < flipEnd ? rand() : saap[i];
+        return c;
+      }).join("");
+      setFrame({ text, diff, marked: t >= flipEnd, settled: [...bp].map((_, i) => t >= settleAt(i) && !(i === diff && t >= flipStart && t < flipEnd)) });
+    }, 55);
+    return () => clearInterval(tick);
+  }, [pairs]);
+  return (
+    <div className="flap" aria-label="Substituted peptide">
+      {[...frame.text].map((c, i) => (
+        <span key={i} className={"tile" + (i === frame.diff && frame.marked ? " sub" : "") + (frame.settled[i] === false ? " spinning" : "")}>{c}</span>
+      ))}
+    </div>
+  );
+}
+
+function HomePage({ stats }) {
+  const [q, setQ] = useState("");
+  const [proteins] = useAsync(() => api.proteins({ sort: "n_saap", order: "desc", page_size: 8 }), []);
+  const [overview] = useAsync(api.datasets, []);
+  const search = (e) => {
+    e.preventDefault();
+    const term = q.trim();
+    if (!term) return go("browse");
+    if (ACCESSION.test(term.toUpperCase())) return go(`protein/${term.toUpperCase()}`);
+    try {
+      sessionStorage.setItem("browse.filters", JSON.stringify({ ...DEFAULT_FILTERS, q: term }));
+      sessionStorage.setItem("browse.page", "1");
+    } catch { /* storage unavailable */ }
+    go("browse");
+  };
+  return (
+    <div className="page stack home">
+      <div className="hero">
+        <FlapBoard />
+        <h1><Wordmark /></h1>
+        <p className="muted">Functional database of amino acid substitutions arising from alternate RNA decoding identified via mass spectrometry-based proteomics</p>
+        <form className="search hero-search" onSubmit={search}>
+          <Icon name="search" />
+          <input autoFocus type="search" placeholder="Peptide, gene, protein or UniProt accession" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="primary" type="submit">Search</button>
+        </form>
+      </div>
+      {stats && (
+        <div className="metrics">
+          <Metric k="SAAP" v={stats.n_saap.toLocaleString()} />
+          <Metric k="Proteins" v={stats.n_proteins.toLocaleString()} />
+          <Metric k="Observations" v={stats.n_observations.toLocaleString()} />
+          <Metric k="Tissues & cell types" v={stats.n_tissues.toLocaleString()} />
+        </div>
+      )}
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-head"><h2>Most substituted proteins</h2><span className="spacer" /><a href="#/proteins">All proteins</a></div>
+          {!proteins ? <Loading /> : (
+            <table><tbody>{proteins.items.map((p) => (
+              <tr key={p.protein_accession} className="link" onClick={() => go(`protein/${p.protein_accession}`)}>
+                <td><b>{fmt.text(p.gene)}</b></td>
+                <td className="trunc muted" title={p.description}>{fmt.text(p.description)}</td>
+                <td className="num">{plural(p.n_saap, "SAAP")}</td>
+                <td><MiniMap length={p.length} positions={p.positions} width={120} /></td>
+              </tr>
+            ))}</tbody></table>
+          )}
+        </div>
+        <div className="card">
+          <div className="card-head"><h2>Top substitutions</h2><span className="spacer" /><a href="#/tissues">Tissues</a></div>
+          <div className="card-body">{overview ? <BarList items={overview.top_substitutions.slice(0, 8)} /> : <Loading />}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =============================== Browse =============================== */
 const COLUMNS = [
   { key: "mtp_seq", label: "SAAP", sortable: true, cls: "seq", fixed: true, render: (r) => <SubSeq saap={r.mtp_seq} bp={r.bp_seq} /> },
@@ -45,7 +156,8 @@ const COLUMNS = [
   { key: "position_in_protein", label: "Position", sortable: true, num: true,
     render: (r) => (r.positions_all ? (r.n_positions > 1 ? <span title={r.positions_all}>{r.positions_all.split(",")[0]} +{r.n_positions - 1}</span> : r.positions_all) : fmt.text(r.position_in_protein)) },
   { key: "species", label: "Species", render: (r) => chips(r.species, shortSpecies) },
-  { key: "n_datasets", label: "Datasets", sortable: true, render: (r) => chips(r.datasets, undefined, 2) },
+  { key: "n_tissues", label: "Tissues", sortable: true, title: "Tissues / cell types (per species)", render: (r) => chips(r.tissues, undefined, 2) },
+  { key: "datasets", label: "Datasets", hidden: true, private: true, render: (r) => chips(r.datasets, undefined, 2) },
   { key: "digests", label: "Digest", hidden: true, render: (r) => chips(r.digests) },
   { key: "acquisition_types", label: "Acquisition", hidden: true, render: (r) => chips(r.acquisition_types) },
   { key: "n_observations", label: "Obs", sortable: true, num: true, title: "Observations" },
@@ -65,7 +177,8 @@ const COLUMNS = [
 ];
 
 const FILTERS = [
-  { key: "dataset", label: "Dataset", facet: "datasets" },
+  { key: "tissue", label: "Tissue / cell type", facet: "tissues" },
+  { key: "dataset", label: "Dataset", facet: "datasets", private: true },
   { key: "digest", label: "Digest", facet: "digests" },
   { key: "species", label: "Species", facet: "species" },
   { key: "acquisition_type", label: "Acquisition", facet: "acquisition_types" },
@@ -105,12 +218,15 @@ function BrowsePage({ facets }) {
 
   const setFilter = (k, v) => { setFilters((f) => ({ ...f, [k]: v })); setPage(1); };
   const replaceFilters = (f) => { setFilters(f); setQ(f.q); setPage(1); };
-  const cols = COLUMNS.filter((c) => c.fixed || !hidden.includes(c.key));
+  const priv = Boolean(facets.datasets);  // dataset names are only served in private mode
+  const visibleColumns = COLUMNS.filter((c) => priv || !c.private);
+  const visibleFilters = FILTERS.filter((f) => priv || !f.private);
+  const cols = visibleColumns.filter((c) => c.fixed || !hidden.includes(c.key));
   const items = data ? data.items : [];
   const allOnPage = items.length > 0 && items.every((r) => selected.has(r.id));
   const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togglePage = () => setSelected((s) => { const n = new Set(s); items.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
-  const active = FILTERS.filter((f) => filters[f.key] !== "");
+  const active = visibleFilters.filter((f) => filters[f.key] !== "");
   const isDefault = JSON.stringify({ ...filters, q: "" }) === JSON.stringify({ ...DEFAULT_FILTERS, q: "" });
 
   const annotateSelected = async () => {
@@ -138,14 +254,14 @@ function BrowsePage({ facets }) {
           <div className="selbar">
             <b>{selected.size.toLocaleString()}</b>&nbsp;selected
             <button onClick={() => setExporting({ ids: [...selected], count: selected.size })}><Icon name="download" />Export</button>
-            <button onClick={annotateSelected} disabled={busy}>{busy ? <Spinner /> : <Icon name="spark" />}Annotate</button>
-            <button onClick={deleteSelected}>Delete</button>
+            {priv && <button onClick={annotateSelected} disabled={busy}>{busy ? <Spinner /> : <Icon name="spark" />}Annotate</button>}
+            {priv && <button onClick={deleteSelected}>Delete</button>}
             <button className="icon" onClick={() => setSelected(new Set())} title="Clear selection"><Icon name="x" /></button>
           </div>
         ) : (
           <Fragment>
             <Menu label={<Fragment><Icon name="columns" />Columns</Fragment>}>
-              {COLUMNS.filter((c) => !c.fixed).map((c) => (
+              {visibleColumns.filter((c) => !c.fixed).map((c) => (
                 <label key={c.key}><input type="checkbox" checked={!hidden.includes(c.key)}
                   onChange={() => setHidden((h) => (h.includes(c.key) ? h.filter((k) => k !== c.key) : [...h, c.key]))} />{c.label}</label>
               ))}
@@ -159,7 +275,7 @@ function BrowsePage({ facets }) {
       <div className="card">
         {showFilters && (
           <div className="filter-panel">
-            {FILTERS.map((f) => (
+            {visibleFilters.map((f) => (
               <div className="field" key={f.key}>
                 <label>{f.label}</label>
                 {f.number ? (
@@ -296,8 +412,10 @@ function SiteScores({ s, site }) {
 }
 
 function ObservationsTable({ observations }) {
-  const cols = [["dataset", "Dataset"], ["tmt_tissue", "TMT / tissue"], ["digest", "Digest"], ["species", "Species"],
-    ["acquisition_type", "Acquisition"], ["saap_pep", "PEP"], ["positional_probability", "PosProb"], ["n_evidence_fragments", "Fragments"], ["source_file", "File"]];
+  const priv = observations.length > 0 && "dataset" in observations[0];  // private mode only
+  const cols = [["tissue", "Tissue / cell type"], ["species", "Species"], ["digest", "Digest"],
+    ["acquisition_type", "Acquisition"], ["saap_pep", "PEP"], ["positional_probability", "PosProb"], ["n_evidence_fragments", "Fragments"],
+    ...(priv ? [["dataset", "Dataset"], ["tmt_tissue", "TMT / tissue"], ["source_file", "File"]] : [])];
   const numeric = { saap_pep: fmt.sci, positional_probability: (v) => fmt.num(v, 3), n_evidence_fragments: fmt.int };
   return (
     <div className="table-wrap">
@@ -384,7 +502,7 @@ function ProteinPage({ accession, initialTab }) {
                   <th className="num" title={PLDDT_TITLE}>pLDDT</th>
                   <th className="num" title="AlphaMissense pathogenicity">AlphaMissense pathogenicity</th>
                   <th title="UniProt natural variants at this position; a match to this substitution suggests a genetic variant">UniProt variant</th>
-                  <th className="num">Obs</th><th className="num">Best PEP</th><th>Datasets</th>
+                  <th className="num">Obs</th><th className="num">Best PEP</th><th>Tissues</th>
                 </tr></thead>
                 <tbody>{shown.map((s) => (
                   <tr key={s.id} className="link" onClick={() => go(`saap/${s.id}`)}>
@@ -394,7 +512,7 @@ function ProteinPage({ accession, initialTab }) {
                     <SiteScores s={s} site={ann && ann.sites[s.id]} />
                     <td className="num">{fmt.int(s.n_observations)}</td>
                     <td className="num">{fmt.sci(s.best_saap_pep)}</td>
-                    <td>{chips(s.datasets, undefined, 2)}</td>
+                    <td>{chips(s.tissues, undefined, 2)}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -548,7 +666,42 @@ function SaapPage({ id, initialTab }) {
 }
 
 /* ============================== Datasets ============================== */
-function DatasetsPage({ stats }) {
+/** Browse filtered to one tissue / cell type (an organ includes its sub-sites). */
+const browseTissue = (name, species) => {
+  try {
+    sessionStorage.setItem("browse.filters", JSON.stringify({ ...DEFAULT_FILTERS, tissue: name, species: species || "" }));
+    sessionStorage.setItem("browse.page", "1");
+  } catch { /* unavailable */ }
+  go("browse");
+};
+
+function GroupTable({ rows, label, clickable }) {
+  // Rows sorted by species, then organ; an organ heading precedes its sub-sites.
+  const sorted = [...rows].sort((a, b) => a.species.localeCompare(b.species) || a.name.localeCompare(b.name));
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr><th>{label}</th><th>Species</th><th className="num">SAAP</th><th className="num">Observations</th><th>Positioned</th><th>Digest</th><th>Acquisition</th></tr></thead>
+        <tbody>{sorted.map((d) => {
+          const pct = d.n_saap ? Math.round((100 * d.n_annotated) / d.n_saap) : 0;
+          const [org, sub] = d.name.split(" (");
+          return (
+            <tr key={d.name + d.species} className={clickable ? "link" : ""} onClick={() => clickable && browseTissue(d.name, d.species)}>
+              <td><b>{org}</b>{sub && <span className="muted"> ({sub}</span>}{d.sample_type === "cell type" && <span className="chip" style={{ marginLeft: 8 }}>cell type</span>}</td>
+              <td><i>{shortSpecies(d.species || "")}</i></td>
+              <td className="num">{d.n_saap.toLocaleString()}</td>
+              <td className="num">{d.n_observations.toLocaleString()}</td>
+              <td><span className="inline-bar"><span className="bar-track"><span className="bar-fill" style={{ width: `${pct}%`, display: "block" }} /></span>{pct}%</span></td>
+              <td>{chips(d.digests)}</td><td>{chips(d.acquisition_types)}</td>
+            </tr>
+          );
+        })}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function TissuesPage({ stats }) {
   const toast = useToast();
   const [ov, error, reload] = useAsync(api.datasets, []);
   useDataChanged(reload);
@@ -559,48 +712,40 @@ function DatasetsPage({ stats }) {
   };
   if (error) return <ErrorNote error={error} />;
   if (!ov) return <Loading />;
-  if (!ov.datasets.length) return <div className="card empty">No data yet. <a href="#/import">Import a file</a>.</div>;
+  if (!ov.tissues.length) return <div className="card empty">No data yet. <a href="#/import">Import a file</a>.</div>;
+  // Organ-level totals for the trend chart (sub-sites grouped under their organ).
+  const organs = Object.values(ov.tissues.reduce((m, t) => {
+    const o = t.name.split(" (")[0];
+    m[o] = m[o] || { label: o, n: 0 }; m[o].n += t.n_saap; return m;
+  }, {})).sort((a, b) => b.n - a.n).slice(0, 12);
 
   return (
     <div className="page stack">
       {stats && <div className="metrics">
         <Metric k="SAAP" v={stats.n_saap.toLocaleString()} />
         <Metric k="Observations" v={stats.n_observations.toLocaleString()} />
-        <Metric k="Datasets" v={stats.n_datasets.toLocaleString()} />
+        <Metric k="Tissues & cell types" v={stats.n_tissues.toLocaleString()} />
         <Metric k="Proteins" v={stats.n_proteins.toLocaleString()} />
         <Metric k="Genes" v={stats.n_genes.toLocaleString()} />
       </div>}
       <div className="grid-2">
-        {[["Top substitutions", ov.top_substitutions], ["Species", ov.species_distribution],
-          ["Digest", ov.digest_distribution], ["Acquisition", ov.acquisition_distribution]].map(([t, items]) => (
+        {[["Top substitutions", ov.top_substitutions], ["Organs", organs],
+          ["Species", ov.species_distribution], ["Acquisition", ov.acquisition_distribution]].map(([t, items]) => (
           <div className="card" key={t}><div className="card-head"><h2>{t}</h2><span className="muted">distinct SAAP</span></div>
             <div className="card-body"><BarList items={items} /></div></div>
         ))}
       </div>
       <div className="card">
-        <div className="card-head"><h2>Datasets</h2><span className="muted">{ov.datasets.length}</span></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Dataset</th><th className="num">SAAP</th><th className="num">Observations</th><th>Positioned</th><th>Species</th><th>Digest</th><th>Acquisition</th></tr></thead>
-            <tbody>{ov.datasets.map((d) => {
-              const pct = d.n_saap ? Math.round((100 * d.n_annotated) / d.n_saap) : 0;
-              return (
-                <tr key={d.name} className="link" onClick={() => {
-                  try { sessionStorage.setItem("browse.filters", JSON.stringify({ ...DEFAULT_FILTERS, dataset: d.name })); sessionStorage.setItem("browse.page", "1"); } catch { /* unavailable */ }
-                  go("browse");
-                }}>
-                  <td><b>{d.name}</b></td>
-                  <td className="num">{d.n_saap.toLocaleString()}</td>
-                  <td className="num">{d.n_observations.toLocaleString()}</td>
-                  <td><span className="inline-bar"><span className="bar-track"><span className="bar-fill" style={{ width: `${pct}%`, display: "block" }} /></span>{pct}%</span></td>
-                  <td>{chips(d.species, shortSpecies)}</td><td>{chips(d.digests)}</td><td>{chips(d.acquisition_types)}</td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        </div>
+        <div className="card-head"><h2>Tissues &amp; cell types</h2><span className="muted">{ov.tissues.length} by species</span></div>
+        <GroupTable rows={ov.tissues} label="Tissue / cell type" clickable />
       </div>
-      <div className="row"><span className="spacer" /><button className="ghost danger sm" onClick={wipe}>Clear all data</button></div>
+      {ov.datasets && (
+        <div className="card">
+          <div className="card-head"><h2>Datasets</h2><span className="muted">private · {ov.datasets.length}</span></div>
+          <GroupTable rows={ov.datasets} label="Dataset" />
+        </div>
+      )}
+      {stats && stats.private && <div className="row"><span className="spacer" /><button className="ghost danger sm" onClick={wipe}>Clear all data</button></div>}
     </div>
   );
 }
@@ -682,12 +827,14 @@ function ImportPage() {
       <div className="card">
         <div className="card-head"><h2>Curation log</h2></div>
         {curation ? (
-          <div className="kv">
-            <div className="k">SAAP</div><div className="v">{curation.n_saap.toLocaleString()}</div>
-            <div className="k">PosProb &lt; {curation.min_positional_probability}</div><div className="v">{curation.below_min_positional_probability.toLocaleString()} · kept, filter with Min PosProb</div>
-            <div className="k">No PosProb</div><div className="v">{curation.no_positional_probability.toLocaleString()} · kept (e.g. DIA data)</div>
-            <div className="k">gnomAD (human)</div><div className="v">{["absent", "present", "unmapped"].map((k) => `${(curation.gnomad[k] || 0).toLocaleString()} ${k}`).join(" · ")}</div>
-            <div className="k">Removed</div><div className="v">immunoglobulins · contaminants (cRAP) · genome-encoded (exact match in reference proteome, I = L) · gnomAD AF ≥ 0.0001 · known genetic variants not confirmed rare by gnomAD</div>
+          <div className="card-body stack" style={{ gap: 8 }}>
+            <div className="stats-line">
+              <span>PosProb &lt; {curation.min_positional_probability} <b>{curation.below_min_positional_probability.toLocaleString()}</b></span>
+              <span>No PosProb <b>{curation.no_positional_probability.toLocaleString()}</b></span>
+              <span>gnomAD absent <b>{(curation.gnomad.absent || 0).toLocaleString()}</b></span>
+              <span>rare <b>{(curation.gnomad.present || 0).toLocaleString()}</b></span>
+            </div>
+            <div className="muted">Removed: immunoglobulins, contaminants, genome-encoded peptides, gnomAD AF ≥ 0.0001, unconfirmed known variants</div>
           </div>
         ) : <Loading />}
       </div>

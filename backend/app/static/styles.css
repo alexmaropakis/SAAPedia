@@ -74,9 +74,11 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 650; font-size: 15px; }
 .brand:hover { text-decoration: none; }
-.brand svg { width: 24px; height: 24px; }
-.brand svg * { fill: none; stroke: var(--text); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-.brand svg circle { fill: var(--accent); stroke: none; }
+.brand .logo { width: 26px; height: 26px; }
+.logo-tile { fill: var(--text); }
+.logo-letter { font: 700 19px var(--mono); fill: var(--surface); }
+.logo-split { stroke: var(--surface); stroke-opacity: .35; stroke-width: 1; }
+.logo-mark { fill: var(--mark); }
 .nav { display: flex; gap: 2px; height: 100%; }
 .nav a {
   display: flex; align-items: center; padding: 0 12px;
@@ -352,3 +354,32 @@ details[open] summary { margin-bottom: 8px; }
 .legend .lg { display: inline-flex; gap: 10px; align-items: center; }
 .legend .lg b { font-weight: 500; color: var(--text-2); }
 .pmap .ptm.site { fill: var(--accent); }
+
+/* home */
+.hero { position: relative; padding: 28px 0 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.hero h1 { font-size: 64px; letter-spacing: -.035em; line-height: 1.05; }
+.hero p { margin: 0 0 14px; font-size: 15px; max-width: 640px; line-height: 1.5; }
+.hero-search { width: min(640px, 100%); gap: 8px; }
+.hero-search input { width: 100%; height: 44px; font-size: 14px; padding-left: 38px; border-radius: 22px; }
+.hero-search svg { left: 15px; }
+.hero-search button { height: 44px; padding: 0 22px; border-radius: 22px; }
+.home .grid-2 td.trunc { max-width: 220px; }
+
+.home .card, .home .metrics { border-radius: 14px; }
+.home .card-head { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+
+/* split-flap board */
+.flap { display: flex; gap: 5px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+.flap .tile {
+  position: relative; width: 34px; height: 46px; display: inline-flex; align-items: center; justify-content: center;
+  font: 600 22px var(--mono); color: var(--surface); background: var(--text);
+  border-radius: 6px; box-shadow: 0 2px 0 rgba(0,0,0,.18), inset 0 -1px 0 rgba(255,255,255,.06);
+  transition: background .25s, color .25s;
+}
+.flap .tile::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,.35); }
+.flap .tile.spinning { color: var(--subtle); }
+.flap .tile.sub { background: var(--mark); color: #fff; }
+
+/* wordmark */
+.wordmark .wm-saap { color: var(--accent); }
+.wordmark .wm-sub { color: var(--mark); }

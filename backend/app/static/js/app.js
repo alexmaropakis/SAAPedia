@@ -1,6 +1,6 @@
 /* App shell: navigation, global stats, toast, routing. */
-const NAV = [["browse", "Browse"], ["proteins", "Proteins"], ["datasets", "Datasets"], ["import", "Import"]];
-const NAV_PARENT = { saap: "browse", protein: "proteins" };
+const NAV = [["home", "Home"], ["browse", "Browse"], ["proteins", "Proteins"], ["tissues", "Tissues"], ["import", "Import"]];
+const NAV_PARENT = { saap: "browse", protein: "proteins", datasets: "tissues" };
 
 function App() {
   const route = useRoute();
@@ -25,29 +25,31 @@ function App() {
 
   let page;
   switch (route.page) {
+    case "home": page = <HomePage stats={stats} />; break;
+    case "browse": page = <BrowsePage facets={facets || {}} />; break;
     case "proteins": page = <ProteinsPage />; break;
     case "protein": page = <ProteinPage accession={route.param} initialTab={route.query.get("tab")} />; break;
     case "saap": page = <SaapPage id={route.param} initialTab={route.query.get("tab")} />; break;
-    case "datasets": page = <DatasetsPage stats={stats} />; break;
+    case "tissues": case "datasets": page = <TissuesPage stats={stats} />; break;
     case "import": page = <ImportPage />; break;
-    default: page = <BrowsePage facets={facets || {}} />;
+    default: page = <HomePage stats={stats} />;
   }
 
   return (
     <ToastContext.Provider value={showToast}>
       <header className="topbar">
-        <a className="brand" href="#/browse">
-          <svg viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M3 41 Q16 38 26 41 T50 41 Q56 41 61 39" />
-            <ellipse cx="27" cy="42" rx="14" ry="8.5" />
-            <path d="M14 32 Q13 17 29 14 Q44 13 45 27 Q46 36 34 38 Q20 40 14 32 Z" />
-            <path d="M37 18 Q46 9 58 12" />
-            <circle cx="45" cy="11" r="3" /><circle cx="58" cy="12" r="3" />
+        <a className="brand" href="#/">
+          <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
+            <rect className="logo-tile" x="1" y="1" width="30" height="30" rx="7" />
+            <text className="logo-letter" x="16" y="22.5" textAnchor="middle">S</text>
+            <line className="logo-split" x1="1" y1="16" x2="31" y2="16" />
+            <path className="logo-mark" d="M22 1 H24 A7 7 0 0 1 31 8 V10 Z" />
           </svg>
-          SAAPedia
+          <Wordmark />
         </a>
         <nav className="nav">
-          {NAV.map(([k, label]) => <a key={k} href={`#/${k}`} className={section === k ? "on" : ""}>{label}</a>)}
+          {NAV.filter(([k]) => k !== "import" || (stats && stats.private))
+            .map(([k, label]) => <a key={k} href={`#/${k}`} className={section === k ? "on" : ""}>{label}</a>)}
         </nav>
         {stats && <div className="meta">{stats.n_saap.toLocaleString()} SAAP · {stats.n_proteins.toLocaleString()} proteins · {stats.n_observations.toLocaleString()} observations</div>}
         <a className="meta-link" href="https://github.com/alexmaropakis/SAAPedia" target="_blank" rel="noopener noreferrer" title="GitHub"><Icon name="external" /></a>

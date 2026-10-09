@@ -106,6 +106,9 @@ class Observation(Base):
     digest: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     species: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     acquisition_type: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)  # Data acquisition
+    # Public sample description (samples.py): tissue or cell type, grouped across datasets.
+    tissue: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    sample_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "tissue" | "cell type"
 
     saap_pep: Mapped[Optional[float]] = mapped_column(Float, nullable=True)            # PEP
     positional_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

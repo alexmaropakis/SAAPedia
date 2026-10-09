@@ -8,33 +8,34 @@ from .annotate import NEEDS_ANNOTATION
 from .cleavage import is_cleavage_position_any
 from .curate import best_positional_probability
 from .models import Observation, SAAP
+from .samples import PRIVATE, organ
 
 # Sort keys the API accepts.
 SORTABLE = {
     "mtp_seq", "bp_seq", "aa_sub", "source_gene", "ref_proteins", "source_accession",
     "ensembl_gene", "ensembl_transcript", "ensembl_protein", "position_in_protein",
-    "n_observations", "n_datasets", "best_saap_pep", "max_positional_probability",
+    "n_observations", "n_tissues", "best_saap_pep", "max_positional_probability",
     "max_evidence_fragments", "gnomad_af",
 }
 
 # Aggregate columns, in a fixed order, exposed on the subquery.
-_AGG_NAMES = ["n_observations", "n_datasets", "datasets", "digests", "species",
+_AGG_NAMES = ["n_observations", "n_tissues", "tissues", "datasets", "digests", "species",
               "acquisition_types", "best_saap_pep", "max_positional_probability",
               "max_evidence_fragments"]
 
 
 def _aggregate_subquery():
-    # A "dataset" for counting purposes is the (dataset, species) pair, so the
-    # same dataset name observed in two species counts as two. Key is NULL when
-    # dataset is absent, so those rows are ignored (matches COUNT DISTINCT).
-    dataset_species_key = Observation.dataset.concat("\x1f").concat(
+    # A tissue for counting purposes is the (tissue, species) pair, so mouse
+    # and human lung count as two.
+    tissue_species_key = Observation.tissue.concat("\x1f").concat(
         func.coalesce(Observation.species, "")
     )
     return (
         select(
             Observation.saap_id.label("saap_id"),
             func.count(Observation.id).label("n_observations"),
-            func.count(distinct(dataset_species_key)).label("n_datasets"),
+            func.count(distinct(tissue_species_key)).label("n_tissues"),
+            func.group_concat(distinct(Observation.tissue)).label("tissues"),
             func.group_concat(distinct(Observation.dataset)).label("datasets"),
             func.group_concat(distinct(Observation.digest)).label("digests"),
             func.group_concat(distinct(Observation.species)).label("species"),
@@ -48,7 +49,7 @@ def _aggregate_subquery():
     )
 
 
-def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, digest=None, species=None,
+def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, tissue=None, digest=None, species=None,
                    acquisition_type=None, aa_sub=None, immunoglobulin=None, trypsin=None,
                    missed_cleavage=None, aas_at_peptide_terminus=None, greater_than_shared=None,
                    at_cleavage_site=None, in_gnomad=None, min_pos_prob=None,
@@ -72,6 +73,9 @@ def _apply_filters(stmt: Select, agg, *, q=None, dataset=None, digest=None, spec
 
     if dataset:
         stmt = stmt.where(_obs_exists(Observation.dataset, dataset))
+    if tissue:  # an organ ("Brain") matches all of its sub-sites ("Brain (cortex)")
+        stmt = stmt.where(exists().where(and_(Observation.saap_id == SAAP.id, or_(
+            Observation.tissue == tissue, Observation.tissue.like(tissue.replace("%", "") + " (%")))))
     if digest:
         stmt = stmt.where(_obs_exists(Observation.digest, digest))
     if species:
@@ -149,8 +153,9 @@ def _row_to_dict(row) -> dict:
             saap.protein_sequence, saap.position_in_protein, agg["digests"], saap.aa_sub
         ),
         "n_observations": agg["n_observations"],
-        "n_datasets": agg["n_datasets"],
-        "datasets": _split(agg["datasets"]),
+        "n_tissues": agg["n_tissues"],
+        "tissues": _split(agg["tissues"]),
+        **({"datasets": _split(agg["datasets"])} if PRIVATE else {}),
         "digests": _split(agg["digests"]),
         "species": _split(agg["species"]),
         "acquisition_types": _split(agg["acquisition_types"]),
@@ -315,14 +320,15 @@ def species_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
     return out
 
 
-def datasets_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
-    """Map saap_id -> dataset token (its distinct datasets joined with '_'),
-    used as the plex/pool label in FASTA headers."""
+def tokens_by_saap(db: Session, ids: list[int]) -> dict[int, str]:
+    """Map saap_id -> FASTA header token: its distinct datasets (private mode)
+    or tissues (public) joined with '_'."""
     if not ids:
         return {}
+    col = Observation.dataset if PRIVATE else Observation.tissue
     rows = db.execute(
-        select(Observation.saap_id, func.group_concat(distinct(Observation.dataset)))
-        .where(Observation.saap_id.in_(ids), Observation.dataset.is_not(None))
+        select(Observation.saap_id, func.group_concat(distinct(col)))
+        .where(Observation.saap_id.in_(ids), col.is_not(None))
         .group_by(Observation.saap_id)
     ).all()
     out: dict[int, str] = {}
@@ -339,7 +345,8 @@ def distinct_values(db: Session):
             select(distinct(col)).where(col.is_not(None), col != "").order_by(col)
         ).all())
     return {
-        "datasets": col_values(Observation.dataset),
+        **({"datasets": col_values(Observation.dataset)} if PRIVATE else {}),
+        "tissues": sorted({t for v in col_values(Observation.tissue) for t in (v, organ(v))}),
         "digests": col_values(Observation.digest),
         "species": col_values(Observation.species),
         "acquisition_types": col_values(Observation.acquisition_type),
@@ -382,43 +389,29 @@ def _ranked(db: Session, col) -> list[dict]:
     return [{"label": label, "n": n} for label, n in rows]
 
 
-def dataset_overview(db: Session) -> dict:
-    """Per-dataset summary plus dataset-wide trends, for the Datasets tab.
-
-    Each dataset's row counts distinct SAAP (not raw observation rows) so a
-    dataset with heavy replicate rows doesn't look artificially larger, and
-    `n_annotated` uses the same "has a position" bar as `annotation_status`,
-    so the two views of annotation coverage always agree.
-    """
+def _group_overview(db: Session, col) -> list[dict]:
+    """Per-group (tissue or dataset) x species summary: distinct SAAP, observations,
+    annotation coverage (same "has a position" bar as `annotation_status`)."""
     annotated = case((SAAP.position_in_protein.is_not(None), Observation.saap_id))
     rows = db.execute(
-        select(
-            Observation.dataset,
-            func.count(Observation.id),
-            func.count(distinct(Observation.saap_id)),
-            func.count(distinct(annotated)),
-            func.group_concat(distinct(Observation.species)),
-            func.group_concat(distinct(Observation.digest)),
-            func.group_concat(distinct(Observation.acquisition_type)),
-        )
+        select(col, Observation.species, func.min(Observation.sample_type),
+               func.count(Observation.id), func.count(distinct(Observation.saap_id)),
+               func.count(distinct(annotated)),
+               func.group_concat(distinct(Observation.digest)),
+               func.group_concat(distinct(Observation.acquisition_type)))
         .join(SAAP, SAAP.id == Observation.saap_id)
-        .where(Observation.dataset.is_not(None))
-        .group_by(Observation.dataset)
-        .order_by(Observation.dataset)
+        .where(col.is_not(None))
+        .group_by(col, Observation.species)
+        .order_by(Observation.species, func.count(distinct(Observation.saap_id)).desc())
     ).all()
-    datasets = [
-        {
-            "name": name,
-            "n_observations": n_obs,
-            "n_saap": n_saap,
-            "n_annotated": n_annotated,
-            "species": _split(species),
-            "digests": _split(digests),
-            "acquisition_types": _split(acq),
-        }
-        for name, n_obs, n_saap, n_annotated, species, digests, acq in rows
-    ]
+    return [{"name": name, "species": species, "sample_type": kind, "n_observations": n_obs, "n_saap": n_saap,
+             "n_annotated": n_ann, "digests": _split(dig), "acquisition_types": _split(acq)}
+            for name, species, kind, n_obs, n_saap, n_ann, dig, acq in rows]
 
+
+def overview(db: Session) -> dict:
+    """Tissue / cell-type summary plus database-wide trends (dataset breakdown
+    only in private mode)."""
     top_substitutions = db.execute(
         select(SAAP.aa_sub, func.count(SAAP.id))
         .where(SAAP.aa_sub.is_not(None), SAAP.aa_sub != "")
@@ -428,7 +421,9 @@ def dataset_overview(db: Session) -> dict:
     ).all()
 
     return {
-        "datasets": datasets,
+        "tissues": _group_overview(db, Observation.tissue),
+        **({"datasets": _group_overview(db, Observation.dataset)} if PRIVATE else {}),
+        "tissue_distribution": _ranked(db, Observation.tissue),
         "species_distribution": _ranked(db, Observation.species),
         "digest_distribution": _ranked(db, Observation.digest),
         "acquisition_distribution": _ranked(db, Observation.acquisition_type),
@@ -489,7 +484,8 @@ def stats(db: Session):
     return {
         "n_saap": db.scalar(select(func.count(SAAP.id))) or 0,
         "n_observations": db.scalar(select(func.count(Observation.id))) or 0,
-        "n_datasets": db.scalar(select(func.count(distinct(Observation.dataset)))) or 0,
+        "n_tissues": db.scalar(select(func.count(distinct(Observation.tissue)))) or 0,
+        "private": PRIVATE,
         "n_genes": db.scalar(select(func.count(distinct(SAAP.source_gene)))) or 0,
         "n_proteins": db.scalar(select(func.count(distinct(SAAP.protein_accession)))) or 0,
     }

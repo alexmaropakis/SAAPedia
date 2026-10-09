@@ -11,6 +11,7 @@ from . import column_map
 from .curate import prune
 from .proteome import check_all
 from .models import Observation, SAAP
+from .samples import sample_label
 from .util import normalize_dataset, normalize_species
 
 # String value -> bool for flag columns.
@@ -297,6 +298,8 @@ def ingest_file(
             db.add(Observation(
                 saap_id=saap.id,
                 dataset=normalize_dataset(_clean_str(record.get("dataset"))),
+              tissue=sample_label(record.get("dataset"), record.get("tmt_tissue"))[0],
+              sample_type=sample_label(record.get("dataset"), record.get("tmt_tissue"))[1],
                 tmt_tissue=_clean_str(record.get("tmt_tissue")),
                 digest=_clean_str(record.get("digest")),
                 species=normalize_species(_clean_str(record.get("species"))),

@@ -22,7 +22,17 @@ from .database import get_db, init_db
 from .fasta import BASE_HEADER, DEFAULT_HEADER, PROTEIN_HEADER, generate_fasta
 from .ingest import ingest_file
 from .models import SAAP, Observation
+from .samples import PRIVATE
 from .schemas import AnnotateRequest, ExportRequest
+
+# Observation fields that identify a study; only served in private mode.
+PRIVATE_FIELDS = {"dataset", "tmt_tissue", "source_file", "row_hash"}
+
+
+def require_private():
+    """Writes (import, annotate, delete) are local-only; the public site is read-only."""
+    if not PRIVATE:
+        raise HTTPException(403, "Read-only")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -35,7 +45,7 @@ def _startup():
 
 
 # --- filters -----------------------------------------------------------------
-_STR_FILTERS = {"q", "dataset", "digest", "species", "acquisition_type", "aa_sub"}
+_STR_FILTERS = {"q", "tissue", "digest", "species", "acquisition_type", "aa_sub"} | ({"dataset"} if PRIVATE else set())
 _BOOL_FILTERS = {"trypsin", "missed_cleavage", "aas_at_peptide_terminus",
                  "greater_than_shared", "at_cleavage_site", "in_gnomad"}
 _NUM_FILTERS = {"min_pos_prob", "max_pep"}
@@ -73,7 +83,7 @@ def _csv_response(columns: list[tuple[str, str]], rows: list[dict], filename: st
 
 # --- data --------------------------------------------------------------------
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload(file: UploadFile = File(...), db: Session = Depends(get_db), _=Depends(require_private)):
     if not file.filename or not file.filename.lower().endswith((".csv", ".tsv", ".txt", ".xlsx")):
         raise HTTPException(400, "Upload a .csv, .tsv, or .xlsx file.")
     try:
@@ -84,7 +94,7 @@ async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 @app.post("/api/saap/delete")
-def delete_saap(payload: dict, db: Session = Depends(get_db)):
+def delete_saap(payload: dict, db: Session = Depends(get_db), _=Depends(require_private)):
     """Body: {ids:[...]} for specific SAAP, or {all:true} to clear everything."""
     ids, wipe_all = payload.get("ids"), bool(payload.get("all"))
     if not wipe_all and not ids:
@@ -110,7 +120,7 @@ def curation(db: Session = Depends(get_db)):
 
 @app.get("/api/datasets")
 def datasets(db: Session = Depends(get_db)):
-    return crud.dataset_overview(db)
+    return crud.overview(db)
 
 
 # --- SAAP --------------------------------------------------------------------
@@ -144,8 +154,8 @@ def saap_detail(saap_id: int, db: Session = Depends(get_db)):
                 (v for v in [saap.source_positional_probability,
                              *(o.positional_probability for o in observations)] if v is not None), default=None),
         },
-        "observations": [{c.name: getattr(o, c.name) for c in Observation.__table__.columns}
-                         for o in observations],
+        "observations": [{c.name: getattr(o, c.name) for c in Observation.__table__.columns
+                          if PRIVATE or c.name not in PRIVATE_FIELDS} for o in observations],
     }
 
 
@@ -201,7 +211,7 @@ def protein_structure(accession: str):
 
 # --- annotation --------------------------------------------------------------
 @app.post("/api/annotate")
-def annotate(req: AnnotateRequest, db: Session = Depends(get_db)):
+def annotate(req: AnnotateRequest, db: Session = Depends(get_db), _=Depends(require_private)):
     """Resolve Ensembl IDs, protein sequence and substitution position from
     UniProt. Network failures are reported in the response, not raised."""
     return annotate_mod.annotate_saaps(db, ids=req.ids, overwrite=req.overwrite,
@@ -236,10 +246,10 @@ async def export_fasta(
         raise HTTPException(400, "Nothing to export.")
 
     ids = [s.id for s in saaps]
-    # A single filtered species/dataset stamps every header; otherwise each
-    # SAAP carries its own.
+    # A single filtered species/tissue (or dataset, privately) stamps every
+    # header; otherwise each SAAP carries its own.
     species = filters.get("species") or req.species
-    dataset = filters.get("dataset")
+    dataset = filters.get("dataset") or filters.get("tissue")
     protein_mode = (req.entry_mode or "").lower() == "protein"
     skipped: list[str] = []
     fasta = generate_fasta(
@@ -247,7 +257,7 @@ async def export_fasta(
         species_by_id=None if species else crud.species_by_saap(db, ids),
         default_species=species,
         token=dataset or "",
-        token_by_id=None if dataset else crud.datasets_by_saap(db, ids),
+        token_by_id=None if dataset else crud.tokens_by_saap(db, ids),
         include_decoys=req.decoys,
         include_base_peptides=req.base_peptides,
         entry_mode="protein" if protein_mode else "peptide",
@@ -274,8 +284,9 @@ _ROLLUP_COLUMNS = [
     ("mtp_seq", "SAAP"), ("bp_seq", "BP"), ("aa_sub", "AAS"),
     ("source_gene", "Gene"), ("source_accession", "UniProt"), ("ref_proteins", "RefProteins"),
     ("protein_accession", "Protein accession"), ("positions_all", "Position in protein"),
-    ("n_observations", "N Observations"), ("n_datasets", "N Datasets"),
-    ("datasets", "Datasets"), ("digests", "Digests"), ("species", "Species"),
+    ("n_observations", "N Observations"), ("n_tissues", "N Tissues"),
+    ("tissues", "Tissues / cell types"), *([("datasets", "Datasets")] if PRIVATE else []),
+    ("digests", "Digests"), ("species", "Species"),
     ("acquisition_types", "Data acquisition"),
     ("best_saap_pep", "Best PEP"), ("max_positional_probability", "Max positional probability"),
     ("max_evidence_fragments", "Max evidence fragments"),
